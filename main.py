@@ -28,16 +28,18 @@ load_dotenv()
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 ASSISTANT_ID = os.getenv('ASSISTANT_ID')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
+SPREADSHEET_NAME = os.getenv('SPREADSHEET_NAME', 'Whitelist')
 
 # Verificar que las variables de entorno existan
-required_env_vars = ['TELEGRAM_BOT_TOKEN', 'ASSISTANT_ID', 'OPENAI_API_KEY']
+required_env_vars = ['TELEGRAM_BOT_TOKEN', 'ASSISTANT_ID', 'OPENAI_API_KEY', 'GOOGLE_CREDENTIALS']
 
 for var in required_env_vars:
     if not os.getenv(var):
         raise ValueError(f"La variable de entorno {var} no está configurada")
 
-# Persistence file for user threads
-THREADS_FILE = "/Users/jesus/mi_telegram_bot/user_threads.json"
+# Persistence file for user threads - usar path relativo o variable de entorno
+THREADS_FILE = "user_threads.json"
 
 def load_user_threads():
     """Load existing user threads from file."""
@@ -94,10 +96,7 @@ async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYP
             run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
             
             if run.status == "completed":
-                # Obtener los mensajes del thread
                 messages = client.beta.threads.messages.list(thread_id=thread_id)
-                
-                # Obtener la última respuesta del asistente
                 bot_reply = next(
                     (msg.content[0].text.value for msg in messages.data 
                      if msg.role == "assistant"), 
@@ -113,7 +112,6 @@ async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 await update.message.reply_text("Hubo un error al procesar tu solicitud.")
                 break
             
-            # Pequeña pausa para no sobrecargar la API
             time.sleep(1)
 
     except Exception as e:
@@ -123,21 +121,23 @@ async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYP
 async def process_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE, voice_message):
     chat_id = update.effective_chat.id
     try:
-        # Download the voice message
-        file = await context.bot.get_file(voice_message.file_id)
+        # Usar directorio temporal del sistema
         voice_path = f"/tmp/voice_{chat_id}.ogg"
+        file = await context.bot.get_file(voice_message.file_id)
         await file.download_to_drive(voice_path)
 
-        # Transcribe the voice message
         with open(voice_path, "rb") as audio_file:
             transcription = client.audio.transcriptions.create(
                 model="whisper-1", 
                 file=audio_file
             )
 
+        # Limpiar archivo temporal
+        if os.path.exists(voice_path):
+            os.remove(voice_path)
+
         logger.info(f"Transcripción de voz: {transcription.text}")
 
-        # Recuperar o crear thread existente
         if str(chat_id) not in user_threads:
             thread = client.beta.threads.create()
             user_threads[str(chat_id)] = thread.id
@@ -145,42 +145,39 @@ async def process_voice_message(update: Update, context: ContextTypes.DEFAULT_TY
         
         thread_id = user_threads[str(chat_id)]
 
-        # Añadir el mensaje del usuario al thread
         message = client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=transcription.text
         )
 
-        # Crear la ejecución (run)
         run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=ASSISTANT_ID
         )
 
-        # Esperar y verificar el estado de la ejecución
         while True:
             run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
             
             if run.status == "completed":
-                # Obtener los mensajes del thread
                 messages = client.beta.threads.messages.list(thread_id=thread_id)
-                
-                # Obtener la última respuesta del asistente
                 bot_reply = next(
                     (msg.content[0].text.value for msg in messages.data 
                      if msg.role == "assistant"), 
                     "No pude generar una respuesta."
                 )
                 
-                # Convert text response to speech
+                # Convert text response to speech usando directorio temporal
                 tts = gTTS(bot_reply, lang="es")
                 audio_path = f"/tmp/response_{chat_id}.mp3"
                 tts.save(audio_path)
 
-                # Send voice response
                 with open(audio_path, "rb") as audio_file:
                     await context.bot.send_voice(chat_id=chat_id, voice=audio_file)
+                
+                # Limpiar archivo temporal
+                if os.path.exists(audio_path):
+                    os.remove(audio_path)
                 
                 break
             
@@ -195,42 +192,38 @@ async def process_voice_message(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Error al procesar nota de voz: {e}")
         await update.message.reply_text("No pude procesar la nota de voz. Intenta nuevamente.")
 
-# ====== CONFIGURACIÓN DE LOGGING ======
+# Configuración de logging
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,  # Cambiado a INFO para producción
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('bot_debug.log')
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
-# ====== CLIENTE OPENAI ======
+# Cliente OpenAI
 try:
     client = OpenAI(api_key=OPENAI_API_KEY)
 except Exception as e:
     logger.error(f"OpenAI Client Initialization Error: {e}")
     sys.exit(1)
 
-# ====== CREDENCIALES ======
-CREDENTIALS_FILE = "/Users/jesus/mi_telegram_bot/credentials.json"
-SPREADSHEET_NAME = "Whitelist"
-
-# ====== SERVIDOR HTTP ======
+# Servidor HTTP para mantener el bot activo
 app = Flask('')
 
 @app.route('/')
 def home():
     return "El bot está activo."
 
-# ====== GOOGLE SHEETS ======
+def run():
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
+
+# Google Sheets setup usando credenciales como JSON
 def get_sheet():
     try:
-        credentials_path = os.path.expanduser(CREDENTIALS_FILE)
-        
+        # Cargar credenciales desde variable de entorno
+        credentials_dict = json.loads(GOOGLE_CREDENTIALS)
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        credentials = ServiceAccountCredentials.from_json_keyfile_name(credentials_path, scope)
+        credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
         client = gspread.authorize(credentials)
         sheet = client.open(SPREADSHEET_NAME).sheet1
         logger.info("✅ Conexión a Google Sheets exitosa.")
@@ -240,7 +233,6 @@ def get_sheet():
         raise
 
 validated_users = {}
-user_threads = {}
 
 async def validate_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -260,7 +252,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     logger.debug(f"Handling message for chat_id: {chat_id}")
 
-    # Manejar estado de espera de email
     if context.user_data.get("state") == "waiting_email":
         try:
             sheet = get_sheet()
@@ -282,22 +273,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Hubo un error al validar tu email. Intenta más tarde.")
             return
 
-    # Verificar si el usuario está validado
     if chat_id not in validated_users:
         await validate_email(update, context)
         return
 
-    # Procesar mensaje de texto
     if user_message:
         await process_text_message(update, context, user_message)
     
-    # Procesar nota de voz
     if voice_message:
         await process_voice_message(update, context, voice_message)
 
 def main():
     try:
-        logger.debug("Iniciando la aplicación de Telegram...")
+        logger.info("Iniciando la aplicación de Telegram...")
         application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
         application.add_handler(CommandHandler("start", validate_email))
@@ -306,7 +294,11 @@ def main():
             handle_message
         ))
 
-        logger.debug("Iniciando polling...")
+        # Iniciar Flask en un hilo separado
+        from threading import Thread
+        Thread(target=run).start()
+
+        logger.info("Iniciando polling...")
         application.run_polling(drop_pending_updates=True)
     except Exception as e:
         logger.error(f"Error fatal en la aplicación: {e}")
