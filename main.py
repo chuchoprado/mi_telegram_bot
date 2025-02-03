@@ -4,7 +4,6 @@ import logging
 import traceback
 import openai
 import json
-from openai import OpenAI
 import gspread
 from gtts import gTTS
 from flask import Flask
@@ -20,45 +19,6 @@ from telegram.ext import (
 )
 import time
 
-# Obtener variables sensibles del entorno
-TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
-ASSISTANT_ID = os.getenv('ASSISTANT_ID')
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-GOOGLE_CREDENTIALS = os.getenv('GOOGLE_CREDENTIALS')
-SPREADSHEET_NAME = os.getenv('SPREADSHEET_NAME', 'Whitelist')
-
-# Verificar que las variables de entorno existan
-required_env_vars = ['TELEGRAM_BOT_TOKEN', 'ASSISTANT_ID', 'OPENAI_API_KEY', 'GOOGLE_CREDENTIALS']
-
-for var in required_env_vars:
-    if not os.getenv(var):
-        raise ValueError(f"La variable de entorno {var} no está configurada")
-
-# Persistence file for user threads
-THREADS_FILE = os.getenv('THREADS_FILE', '/etc/secrets/credentials.json')
-
-def load_user_threads():
-    """Load existing user threads from file."""
-    try:
-        if os.path.exists(THREADS_FILE):
-            with open(THREADS_FILE, 'r') as f:
-                return json.load(f)
-        return {}
-    except Exception as e:
-        logger.error(f"Error loading user threads: {e}")
-        return {}
-
-def save_user_threads(user_threads):
-    """Save user threads to file."""
-    try:
-        with open(THREADS_FILE, 'w') as f:
-            json.dump(user_threads, f)
-    except Exception as e:
-        logger.error(f"Error saving user threads: {e}")
-
-# Modify global user_threads to use persistence
-user_threads = load_user_threads()
-
 # ====== CONFIGURACIÓN DE LOGGING ======
 logging.basicConfig(
     level=logging.DEBUG,
@@ -72,17 +32,29 @@ logger = logging.getLogger(__name__)
 
 # ====== CLIENTE OPENAI ======
 try:
-    client = OpenAI(api_key=OPENAI_API_KEY)
+    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 except Exception as e:
     logger.error(f"OpenAI Client Initialization Error: {e}")
     sys.exit(1)
 
 # ====== CREDENCIALES ======
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+CREDENTIALS_FILE = "/etc/secrets/credentials.json"
+SPREADSHEET_NAME = "Whitelist"
+
+# ====== SERVIDOR HTTP ======
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "El bot está activo."
+
+# ====== GOOGLE SHEETS ======
 def get_sheet():
     try:
-        credentials_dict = json.loads(GOOGLE_CREDENTIALS)
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        credentials = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+        credentials = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
         client = gspread.authorize(credentials)
         sheet = client.open(SPREADSHEET_NAME).sheet1
         logger.info("✅ Conexión a Google Sheets exitosa.")
@@ -91,39 +63,105 @@ def get_sheet():
         logger.error(f"❌ Error al conectar con Google Sheets: {e}")
         raise
 
-# ====== SERVIDOR HTTP ======
-app = Flask(__name__)
+validated_users = {}
+user_threads = {}
 
-@app.route('/')
-def home():
-    return "El bot está activo."
+async def validate_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    logger.debug(f"Validate email called for chat_id: {chat_id}")
+    
+    if chat_id in validated_users:
+        await update.message.reply_text("✅ Ya estás validado. Puedes interactuar conmigo.")
+        return
 
-def run():
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 8080)))
+    await update.message.reply_text("Por favor, proporciona tu email para validar el acceso:")
+    context.user_data["state"] = "waiting_email"
 
-# ====== PROCESAMIENTO DE MENSAJES ======
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user_message = update.message.text.strip().lower() if update.message.text else None
+    voice_message = update.message.voice
+
+    logger.debug(f"Handling message for chat_id: {chat_id}")
+
+    if context.user_data.get("state") == "waiting_email":
+        try:
+            sheet = get_sheet()
+            emails = [email.lower() for email in sheet.col_values(3)[1:]]
+            if user_message in emails:
+                username = update.effective_user.username or f"user_{chat_id}"
+                email_row = emails.index(user_message) + 2
+                sheet.update_cell(email_row, 6, username)
+                validated_users[chat_id] = user_message
+                context.user_data["state"] = "validated"
+                logger.info(f"✅ Usuario validado: {username} con email {user_message}")
+                await update.message.reply_text(f"✅ Acceso concedido. ¡Bienvenido, {username}!")
+                return
+            else:
+                await update.message.reply_text("❌ Email no válido. Inténtalo nuevamente.")
+                return
+        except Exception as e:
+            logger.error(f"Error durante la validación: {e}")
+            await update.message.reply_text("❌ Hubo un error al validar tu email. Intenta más tarde.")
+            return
+
+    if chat_id not in validated_users:
+        await validate_email(update, context)
+        return
+
+    if user_message:
+        await process_text_message(update, context, user_message)
+    
+    if voice_message:
+        await process_voice_message(update, context, voice_message)
+
 async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
     chat_id = update.effective_chat.id
     logger.info(f"Mensaje recibido del usuario: {user_message}")
-    await update.message.reply_text("Procesando mensaje...")
+    
+    try:
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        if chat_id not in user_threads:
+            thread = client.beta.threads.create()
+            user_threads[chat_id] = thread.id
+        thread_id = user_threads[chat_id]
+        message = client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
+        run = client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=ASSISTANT_ID
+        )
+        while True:
+            run = client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+            if run.status == "completed":
+                messages = client.beta.threads.messages.list(thread_id=thread_id)
+                bot_reply = next(
+                    (msg.content[0].text.value for msg in messages.data if msg.role == "assistant"), 
+                    "No pude generar una respuesta."
+                )
+                logger.info(f"Respuesta del bot: {bot_reply}")
+                await update.message.reply_text(bot_reply)
+                break
+            elif run.status in ["failed", "cancelled", "expired"]:
+                logger.error(f"Run status: {run.status}")
+                await update.message.reply_text("Hubo un error al procesar tu solicitud.")
+                break
+            time.sleep(1)
+    except Exception as e:
+        logger.error(f"Error al interactuar con OpenAI Assistant: {e}")
+        await update.message.reply_text("Hubo un error al procesar tu solicitud. Intenta nuevamente.")
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text.strip().lower() if update.message.text else None
-    if user_message:
-        await process_text_message(update, context, user_message)
-
-# ====== CONFIGURACIÓN DEL BOT ======
 def main():
     try:
         logger.debug("Iniciando la aplicación de Telegram...")
         application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-
-        application.add_handler(CommandHandler("start", lambda u, c: u.message.reply_text("Bienvenido!")))
+        application.add_handler(CommandHandler("start", validate_email))
         application.add_handler(MessageHandler(filters.TEXT, handle_message))
-
         from threading import Thread
-        Thread(target=run).start()
-
+        Thread(target=app.run, kwargs={'host': '0.0.0.0', 'port': int(os.getenv('PORT', 8080))}).start()
         logger.debug("Iniciando polling...")
         application.run_polling(drop_pending_updates=True)
     except Exception as e:
