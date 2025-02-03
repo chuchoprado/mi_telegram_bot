@@ -35,7 +35,7 @@ for var in required_env_vars:
         raise ValueError(f"La variable de entorno {var} no está configurada")
 
 # Persistence file for user threads
-THREADS_FILE = os.getenv('THREADS_FILE', '/etc/secrets/user_threads.json')
+THREADS_FILE = os.getenv('THREADS_FILE', '/etc/secrets/credentials.json')
 
 def load_user_threads():
     """Load existing user threads from file."""
