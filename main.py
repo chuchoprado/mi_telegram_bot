@@ -6,49 +6,56 @@ import openai
 import json
 import gspread
 from gtts import gTTS
-from flask import Flask
+from flask import Flask, request
 from oauth2client.service_account import ServiceAccountCredentials
-from telegram import Update
+from telegram import Update, Bot
 from telegram.constants import ChatAction
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    filters,
-)
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, ContextTypes, filters
 import time
 
 # ====== CONFIGURACIÓN DE LOGGING ======
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('/tmp/bot_debug.log')
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 
-# ====== CLIENTE OPENAI ======
-try:
-    client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-except Exception as e:
-    logger.error(f"OpenAI Client Initialization Error: {e}")
-    sys.exit(1)
-
-# ====== CREDENCIALES ======
+# ====== CONFIGURACIÓN ======
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 CREDENTIALS_FILE = "/etc/secrets/credentials.json"
 SPREADSHEET_NAME = "Whitelist"
+WEBHOOK_URL = f"https://{os.getenv('https://mi-telegram-bot.onrender.com')}/{TELEGRAM_BOT_TOKEN}"
 
-# ====== SERVIDOR HTTP ======
-app = Flask('')
+# ====== CLIENTE OPENAI ======
+try:
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+except Exception as e:
+    logger.error(f"Error al inicializar OpenAI: {e}")
+    sys.exit(1)
+
+# ====== CLIENTE TELEGRAM ======
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
+dispatcher = Dispatcher(bot, None)
+
+# ====== SERVIDOR FLASK ======
+app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "El bot está activo."
+
+@app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
+def receive_update():
+    try:
+        update = Update.de_json(request.get_json(force=True), bot)
+        dispatcher.process_update(update)
+    except Exception as e:
+        logger.error(f"Error procesando la actualización: {e}")
+        logger.error(traceback.format_exc())
+    return "OK", 200
 
 # ====== GOOGLE SHEETS ======
 def get_sheet():
@@ -68,7 +75,7 @@ user_threads = {}
 
 async def validate_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
-    logger.debug(f"Validate email called for chat_id: {chat_id}")
+    logger.debug(f"Validación de email iniciada para chat_id: {chat_id}")
     
     if chat_id in validated_users:
         await update.message.reply_text("✅ Ya estás validado. Puedes interactuar conmigo.")
@@ -82,7 +89,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text.strip().lower() if update.message.text else None
     voice_message = update.message.voice
 
-    logger.debug(f"Handling message for chat_id: {chat_id}")
+    logger.debug(f"Procesando mensaje para chat_id: {chat_id}")
 
     if context.user_data.get("state") == "waiting_email":
         try:
@@ -154,20 +161,19 @@ async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"Error al interactuar con OpenAI Assistant: {e}")
         await update.message.reply_text("Hubo un error al procesar tu solicitud. Intenta nuevamente.")
 
-def main():
-    try:
-        logger.debug("Iniciando la aplicación de Telegram...")
-        application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
-        application.add_handler(CommandHandler("start", validate_email))
-        application.add_handler(MessageHandler(filters.TEXT, handle_message))
-        from threading import Thread
-        Thread(target=app.run, kwargs={'host': '0.0.0.0', 'port': int(os.getenv('PORT', 8080))}).start()
-        logger.debug("Iniciando polling...")
-        application.run_polling(drop_pending_updates=True)
-    except Exception as e:
-        logger.error(f"Error fatal en la aplicación: {e}")
-        logger.error(traceback.format_exc())
-        sys.exit(1)
+# ====== HANDLERS ======
+dispatcher.add_handler(CommandHandler("start", validate_email))
+dispatcher.add_handler(MessageHandler(filters.TEXT, handle_message))
 
-if __name__ == "__main__":
-    main()
+# ====== INICIAR WEBHOOK ======
+def set_webhook():
+    webhook_response = bot.setWebhook(WEBHOOK_URL)
+    if webhook_response:
+        logger.info(f"✅ Webhook establecido en {WEBHOOK_URL}")
+    else:
+        logger.error("❌ Error al establecer el Webhook")
+
+if __name__ == '__main__':
+    set_webhook()
+    app.run(host="0.0.0.0", port=int(os.getenv('PORT', 10000)))
+
