@@ -19,6 +19,8 @@ from telegram.ext import (
     filters
 )
 import time
+import pytz
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 # ====== CONFIGURACIÓN DE LOGGING ======
 logging.basicConfig(
@@ -34,7 +36,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 CREDENTIALS_FILE = "/etc/secrets/credentials.json"
 SPREADSHEET_NAME = "Whitelist"
-WEBHOOK_URL = f"https://{os.getenv('https://mi-telegram-bot.onrender.com')}/{TELEGRAM_BOT_TOKEN}"
+WEBHOOK_URL = f"https://{os.getenv('RENDER_WEBHOOK_URL')}/{TELEGRAM_BOT_TOKEN}"
+
+# ====== CONFIGURACIÓN ZONA HORARIA ======
+os.environ['TZ'] = 'UTC'  # Forzar zona horaria compatible con APScheduler
+scheduler = AsyncIOScheduler(timezone=pytz.UTC)
 
 # ====== CLIENTE OPENAI ======
 try:
@@ -171,6 +177,7 @@ async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYP
 application = (
     ApplicationBuilder()
     .token(TELEGRAM_BOT_TOKEN)
+    .job_queue(scheduler)
     .build()
 )
 
