@@ -38,16 +38,9 @@ CREDENTIALS_FILE = "/etc/secrets/credentials.json"
 SPREADSHEET_NAME = "Whitelist"
 WEBHOOK_URL = f"https://{os.getenv('RENDER_WEBHOOK_URL')}/{TELEGRAM_BOT_TOKEN}"
 
-# ====== CONFIGURACIÓN ZONA HORARIA ======
-os.environ['TZ'] = 'UTC'  # Forzar zona horaria compatible con APScheduler
-scheduler = AsyncIOScheduler(timezone=pytz.UTC)
-
-# ====== CLIENTE OPENAI ======
-try:
-    client = openai.OpenAI(api_key=OPENAI_API_KEY)
-except Exception as e:
-    logger.error(f"Error al inicializar OpenAI: {e}")
-    sys.exit(1)
+# ====== SOLUCIÓN DEL ERROR DE ZONA HORARIA ======
+os.environ['TZ'] = 'UTC'  # Establecer zona horaria manualmente
+time.tzset()  # Aplicar cambios en el entorno
 
 # ====== CLIENTE TELEGRAM ======
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -68,6 +61,13 @@ async def receive_update():
         logger.error(f"Error procesando la actualización: {e}")
         logger.error(traceback.format_exc())
     return "OK", 200
+
+# ====== CLIENTE OPENAI ======
+try:
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
+except Exception as e:
+    logger.error(f"Error al inicializar OpenAI: {e}")
+    sys.exit(1)
 
 # ====== GOOGLE SHEETS ======
 def get_sheet():
@@ -99,7 +99,6 @@ async def validate_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_message = update.message.text.strip().lower() if update.message.text else None
-    voice_message = update.message.voice
 
     logger.debug(f"Procesando mensaje para chat_id: {chat_id}")
 
@@ -130,9 +129,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if user_message:
         await process_text_message(update, context, user_message)
-    
-    if voice_message:
-        await process_voice_message(update, context, voice_message)
 
 async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
     chat_id = update.effective_chat.id
@@ -177,7 +173,6 @@ async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYP
 application = (
     ApplicationBuilder()
     .token(TELEGRAM_BOT_TOKEN)
-    .job_queue(scheduler)
     .build()
 )
 
@@ -196,3 +191,4 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.run_until_complete(set_webhook())
     app.run(host="0.0.0.0", port=int(os.getenv('PORT', 10000)))
+
