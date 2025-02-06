@@ -38,9 +38,13 @@ CREDENTIALS_FILE = "/etc/secrets/credentials.json"
 SPREADSHEET_NAME = "Whitelist"
 WEBHOOK_URL = f"https://{os.getenv('RENDER_WEBHOOK_URL')}/{TELEGRAM_BOT_TOKEN}"
 
-# ====== SOLUCIÓN DEL ERROR DE ZONA HORARIA ======
-os.environ['TZ'] = 'UTC'  # Establecer zona horaria manualmente
-time.tzset()  # Aplicar cambios en el entorno
+# ====== SOLUCIÓN DEFINITIVA DEL ERROR DE ZONA HORARIA ======
+os.environ['TZ'] = 'UTC'  # Establecer manualmente la zona horaria en el sistema
+time.tzset()  # Aplicar cambios
+
+# ====== INICIALIZAR APScheduler con una zona horaria manualmente configurada ======
+scheduler = AsyncIOScheduler()
+scheduler.configure(timezone=pytz.UTC)  # Configurar manualmente la zona horaria para APScheduler
 
 # ====== CLIENTE TELEGRAM ======
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
@@ -191,4 +195,3 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.run_until_complete(set_webhook())
     app.run(host="0.0.0.0", port=int(os.getenv('PORT', 10000)))
-
