@@ -10,7 +10,14 @@ from flask import Flask, request
 from oauth2client.service_account import ServiceAccountCredentials
 from telegram import Update, Bot
 from telegram.constants import ChatAction
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    Application,
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 import time
 
 # ====== CONFIGURACIÓN DE LOGGING ======
@@ -38,7 +45,6 @@ except Exception as e:
 
 # ====== CLIENTE TELEGRAM ======
 bot = Bot(token=TELEGRAM_BOT_TOKEN)
-dispatcher = Dispatcher(bot, None)
 
 # ====== SERVIDOR FLASK ======
 app = Flask(__name__)
@@ -48,10 +54,10 @@ def home():
     return "El bot está activo."
 
 @app.route(f'/{TELEGRAM_BOT_TOKEN}', methods=['POST'])
-def receive_update():
+async def receive_update():
     try:
         update = Update.de_json(request.get_json(force=True), bot)
-        dispatcher.process_update(update)
+        await application.update_queue.put(update)
     except Exception as e:
         logger.error(f"Error procesando la actualización: {e}")
         logger.error(traceback.format_exc())
@@ -161,19 +167,25 @@ async def process_text_message(update: Update, context: ContextTypes.DEFAULT_TYP
         logger.error(f"Error al interactuar con OpenAI Assistant: {e}")
         await update.message.reply_text("Hubo un error al procesar tu solicitud. Intenta nuevamente.")
 
-# ====== HANDLERS ======
-dispatcher.add_handler(CommandHandler("start", validate_email))
-dispatcher.add_handler(MessageHandler(filters.TEXT, handle_message))
+# ====== INICIALIZAR BOT ======
+application = (
+    ApplicationBuilder()
+    .token(TELEGRAM_BOT_TOKEN)
+    .build()
+)
 
-# ====== INICIAR WEBHOOK ======
-def set_webhook():
-    webhook_response = bot.setWebhook(WEBHOOK_URL)
+application.add_handler(CommandHandler("start", validate_email))
+application.add_handler(MessageHandler(filters.TEXT, handle_message))
+
+async def set_webhook():
+    webhook_response = await bot.setWebhook(WEBHOOK_URL)
     if webhook_response:
         logger.info(f"✅ Webhook establecido en {WEBHOOK_URL}")
     else:
         logger.error("❌ Error al establecer el Webhook")
 
 if __name__ == '__main__':
-    set_webhook()
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(set_webhook())
     app.run(host="0.0.0.0", port=int(os.getenv('PORT', 10000)))
-
