@@ -31,10 +31,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ====== CLIENTE OPENAI ======
-try:"OPENAI_API_KEY")
+try:
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    if not OPENAI_API_KEY:
+        raise ValueError("La variable de entorno OPENAI_API_KEY no está definida.")
+    client = OpenAI(api_key=OPENAI_API_KEY)
 except Exception as e:
     logger.error(f"OpenAI Client Initialization Error: {e}")
     sys.exit(1)
+
 
 # ====== CREDENCIALES ======
 TELEGRAM_BOT_TOKEN = "TELEGRAM_BOT_TOKEN"
