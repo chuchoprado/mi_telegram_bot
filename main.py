@@ -3,6 +3,7 @@ import sys
 import logging
 import traceback
 import openai
+import asyncio
 from openai import OpenAI
 import gspread
 from gtts import gTTS
@@ -23,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ====== CONFIGURACIÓN DE TOKENS ======
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # ✅ Corregido para usar la variable correcta
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 CREDENTIALS_FILE = "/etc/secrets/credentials.json"
@@ -40,7 +41,7 @@ except Exception as e:
     sys.exit(1)
 
 # ====== CONFIGURACIÓN DEL BOT DE TELEGRAM ======
-application = Application.builder().token(TOKEN).build()
+application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
 # ====== SERVIDOR FLASK ======
 app = Flask(__name__)  # ✅ Asegurar que Flask se inicializa correctamente
@@ -49,12 +50,14 @@ app = Flask(__name__)  # ✅ Asegurar que Flask se inicializa correctamente
 def home():
     return "El bot está activo."
 
-@app.route(f"/{TOKEN}", methods=["POST"])  # ✅ Solo aceptar POST
+@app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])  # ✅ Corregido
 def webhook():
     """Procesa las actualizaciones de Telegram."""
     try:
         update = Update.de_json(request.get_json(), application.bot)
-        application.update_queue.put(update)
+
+        # ✅ Se ejecuta correctamente como async evitando el RuntimeWarning
+        asyncio.run_coroutine_threadsafe(application.update_queue.put(update), application.bot.loop)
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
