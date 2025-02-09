@@ -13,6 +13,13 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import pytz
 
+# Configurar la zona horaria correctamente
+TIMEZONE = pytz.timezone("UTC")  # ✅ Formato correcto
+
+# Inicializar el scheduler con la zona horaria corregida
+scheduler = AsyncIOScheduler(timezone=TIMEZONE)  # ✅ Aplicado correctamente
+scheduler.start()
+
 # ====== CONFIGURACIÓN DE LOGGING ======
 logging.basicConfig(
     level=logging.DEBUG,
