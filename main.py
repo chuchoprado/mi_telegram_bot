@@ -8,9 +8,8 @@ import gspread
 from gtts import gTTS
 from flask import Flask, request
 from oauth2client.service_account import ServiceAccountCredentials
-import telegram
 from telegram import Update
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 # ====== CONFIGURACIÓN DE LOGGING ======
 logging.basicConfig(
@@ -41,8 +40,7 @@ except Exception as e:
     sys.exit(1)
 
 # ====== CONFIGURACIÓN DEL BOT DE TELEGRAM ======
-bot = telegram.Bot(token=TOKEN)
-dispatcher = Dispatcher(bot, None, use_context=True)
+application = Application.builder().token(TOKEN).build()
 
 # ====== SERVIDOR FLASK ======
 app = Flask(__name__)
@@ -55,8 +53,8 @@ def home():
 def webhook():
     """Procesa las actualizaciones de Telegram."""
     try:
-        update = Update.de_json(request.get_json(), bot)
-        dispatcher.process_update(update)
+        update = Update.de_json(request.get_json(), application.bot)
+        application.update_queue.put(update)
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
@@ -81,9 +79,9 @@ validated_users = {}
 user_threads = {}
 
 # ====== HANDLERS DE TELEGRAM ======
-def start(update, context):
+async def start(update: Update, context):
     """Mensaje de bienvenida."""
-    update.message.reply_text("¡Hola! Soy tu bot de MeditaHub. ¿En qué puedo ayudarte?")
+    await update.message.reply_text("¡Hola! Soy tu bot de MeditaHub. ¿En qué puedo ayudarte?")
 
 async def validate_email(update: Update, context):
     chat_id = update.effective_chat.id
@@ -151,8 +149,8 @@ async def process_text_message(update: Update, context, user_message: str):
         await update.message.reply_text("Hubo un error al procesar tu solicitud. Intenta nuevamente.")
 
 # ====== REGISTRO DE HANDLERS ======
-dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(MessageHandler(filters.TEXT, handle_message))
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
