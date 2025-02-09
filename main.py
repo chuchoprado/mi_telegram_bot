@@ -43,13 +43,13 @@ except Exception as e:
 application = Application.builder().token(TOKEN).build()
 
 # ====== SERVIDOR FLASK ======
-app = Flask(__name__)
+app = Flask(__name__)  # ✅ Asegurar que Flask se inicializa correctamente
 
 @app.route("/", methods=["GET"])
 def home():
     return "El bot está activo."
 
-@app.route(f"/{TOKEN}", methods=["POST"])
+@app.route(f"/{TOKEN}", methods=["POST"])  # ✅ Solo aceptar POST
 def webhook():
     """Procesa las actualizaciones de Telegram."""
     try:
@@ -154,5 +154,4 @@ application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
-   @app.route(f"/{TOKEN}", methods=["POST", "GET"])
-
+    app.run(host="0.0.0.0", port=10000)
