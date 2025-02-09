@@ -45,8 +45,9 @@ except Exception as e:
 application = Application.builder().token(TOKEN).build()
 
 # ====== CONFIGURACIÓN DE APSCHEDULER ======
-TIMEZONE = pytz.timezone("UTC")  # Configuración de zona horaria
-scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+TIMEZONE = pytz.UTC  # Corrección: Se usa pytz.UTC directamente
+scheduler = AsyncIOScheduler()
+scheduler.configure(timezone=TIMEZONE)  # Configuración corregida
 scheduler.start()
 
 # ====== SERVIDOR FLASK ======
