@@ -154,4 +154,5 @@ application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+   @app.route(f"/{TOKEN}", methods=["POST", "GET"])
+
