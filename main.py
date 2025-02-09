@@ -10,17 +10,6 @@ from flask import Flask, request
 from oauth2client.service_account import ServiceAccountCredentials
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-import pytz
-
-# Configurar la zona horaria correctamente usando pytz
-TIMEZONE = pytz.UTC  # ✅ Corrección: usar pytz.UTC directamente
-
-# Inicializar el scheduler y evitar `get_localzone()`
-scheduler = AsyncIOScheduler()
-scheduler.configure(timezone=TIMEZONE)  # ✅ Corrección: Aplicar directamente
-scheduler.start()
-
 
 # ====== CONFIGURACIÓN DE LOGGING ======
 logging.basicConfig(
@@ -52,12 +41,6 @@ except Exception as e:
 
 # ====== CONFIGURACIÓN DEL BOT DE TELEGRAM ======
 application = Application.builder().token(TOKEN).build()
-
-# ====== CONFIGURACIÓN DE APSCHEDULER ======
-TIMEZONE = pytz.UTC  # Corrección: Se usa pytz.UTC directamente
-scheduler = AsyncIOScheduler()
-scheduler.configure(timezone=TIMEZONE)  # Configuración corregida
-scheduler.start()
 
 # ====== SERVIDOR FLASK ======
 app = Flask(__name__)
