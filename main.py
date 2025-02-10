@@ -9,7 +9,7 @@ import gspread
 from gtts import gTTS
 from flask import Flask, request
 from oauth2client.service_account import ServiceAccountCredentials
-from telegram import Update, Voice
+from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 # ====== CONFIGURACIÓN DE LOGGING ======
@@ -45,7 +45,7 @@ application = Application.builder().token(TOKEN).build()
 application.initialize()
 
 # ====== SERVIDOR FLASK ======
-app = Flask(__name__)  # ✅ Asegurar que Flask se inicializa correctamente
+app = Flask(__name__)
 
 @app.route("/", methods=["GET"])
 def home():
@@ -53,10 +53,10 @@ def home():
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 async def webhook():
-    """Procesa las actualizaciones de Telegram."""
+    """Procesa las actualizaciones de Telegram desde el webhook."""
     try:
         update = Update.de_json(request.get_json(), application.bot)
-        await application.process_update(update)  # ✅ Ejecutar de manera asincrónica
+        await application.process_update(update)
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
@@ -65,7 +65,7 @@ async def webhook():
 # ====== HANDLERS DE TELEGRAM ======
 async def start(update: Update, context):
     """Mensaje de bienvenida."""
-    await update.message.reply_text("¡Hola! Soy tu bot El Coach de MeditaHub y fui creado para ayudarte a alcanzar tus objetivos. ¿En qué puedo ayudarte?")
+    await update.message.reply_text("¡Hola! Soy tu bot de MeditaHub. ¿En qué puedo ayudarte?")
 
 async def handle_message(update: Update, context):
     user_message = update.message.text.strip().lower() if update.message.text else ""
@@ -87,13 +87,5 @@ application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
-    import threading
-    
-    # Iniciar el bot en un hilo separado
-    def run_telegram():
-        application.run_polling()
-    
-    threading.Thread(target=run_telegram, daemon=True).start()
-    
-    # Iniciar Flask
+    # Ejecutar solo como webhook, no usar polling
     app.run(host="0.0.0.0", port=10000)
