@@ -29,6 +29,7 @@ class CoachBot:
         
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
+        self.app.initialize()  # 🔥 Ahora la aplicación se inicializa correctamente
         self._setup_handlers()
         
         # Inicializar Google Sheets
@@ -167,7 +168,7 @@ async def webhook(request: Request):
     """Endpoint para el webhook de Telegram"""
     try:
         update = Update.de_json(await request.json(), bot.app.bot)
-        await bot.app.process_update(update)
+        await bot.app.update_queue.put(update)  # 🔥 Ahora los mensajes se procesan correctamente
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Error en webhook: {e}")
