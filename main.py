@@ -39,9 +39,6 @@ except Exception as e:
     logger.error(f"OpenAI Client Initialization Error: {e}")
     sys.exit(1)
 
-# ====== CONFIGURACIÓN DEL BOT DE TELEGRAM ======
-application = Application.builder().token(TOKEN).build()
-
 # ====== SERVIDOR FLASK ======
 app = Flask(__name__)
 
@@ -50,15 +47,16 @@ def home():
     return "El bot está activo."
 
 @app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
+def webhook():
     """Procesa las actualizaciones de Telegram."""
     try:
         update = Update.de_json(request.get_json(), application.bot)
-        await application.process_update(update)
+        application.update_queue.put_nowait(update)  # Enviar el update a la cola
+        return "OK", 200
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
-    return "OK", 200
+        return "ERROR", 500
 
 # ====== CONEXIÓN A GOOGLE SHEETS ======
 def get_sheet():
@@ -149,11 +147,13 @@ async def process_text_message(update: Update, context, user_message: str):
         await update.message.reply_text("Hubo un error al procesar tu solicitud. Intenta nuevamente.")
 
 # ====== REGISTRO DE HANDLERS ======
+application = Application.builder().token(TOKEN).build()
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
+    application.initialize()  # ✅ Inicializa la aplicación antes de procesar eventos
     application.run_webhook(
         listen="0.0.0.0",
         port=10000,
