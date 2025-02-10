@@ -27,8 +27,6 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7804507023:AAE4FxAeFJawgm7b64eLAswiOCmRZXg0Fzw")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
-CREDENTIALS_FILE = "/etc/secrets/credentials.json"
-SPREADSHEET_NAME = "Whitelist"
 
 # ====== CLIENTE OPENAI ======
 try:
@@ -71,21 +69,10 @@ async def handle_message(update: Update, context):
     user_message = update.message.text.strip().lower() if update.message.text else ""
     await update.message.reply_text(f"Recibí tu mensaje: {user_message}")
 
-async def handle_voice(update: Update, context):
-    """Procesa los mensajes de voz y responde con un mensaje de texto."""
-    voice = update.message.voice
-    file = await context.bot.get_file(voice.file_id)
-    file_path = f"voice_{update.message.message_id}.ogg"
-    await file.download(file_path)
-    
-    await update.message.reply_text("✅ Recibí tu mensaje de voz. Aún no puedo procesarlo, pero estoy en ello.")
-
 # ====== REGISTRO DE HANDLERS ======
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT, handle_message))
-application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
-    # Ejecutar solo como webhook, no usar polling
     app.run(host="0.0.0.0", port=10000)
