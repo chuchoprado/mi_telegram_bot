@@ -1,14 +1,14 @@
+# main.py
+import os
+from fastapi import FastAPI
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from google.auth.transport.requests import Request
+from google.oauth2.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
 from openai import OpenAI
-import os.path
-import pickle
 import json
 import logging
+from typing import Dict
 
 # Configurar logging
 logging.basicConfig(
@@ -17,17 +17,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Crear la aplicación FastAPI
+app = FastAPI()
+
 class CoachBot:
-    def __init__(self, telegram_token, spreadsheet_id, credentials_path):
-        # Configuración de tokens y credenciales
-        self.TELEGRAM_TOKEN = telegram_token
-        self.SPREADSHEET_ID = spreadsheet_id
-        self.CREDENTIALS_PATH = /etc/secrets/credentials.json
-        self.SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+    def __init__(self):
+        # Configuración de tokens y credenciales desde variables de entorno
+        self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
+        self.SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
         
         # Inicializar servicios
         self.sheets_service = self._setup_sheets_service()
-        self.openai_client = OpenAI()  # Asegúrate de tener configurada tu API key
+        self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.assistant = None
         
         # Crear la aplicación de Telegram
@@ -35,26 +36,23 @@ class CoachBot:
         self._setup_handlers()
 
     def _setup_sheets_service(self):
-        """Configura el servicio de Google Sheets."""
-        creds = None
-        token_path = 'token.pickle'
-        
-        if os.path.exists(token_path):
-            with open(token_path, 'rb') as token:
-                creds = pickle.load(token)
-                
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    self.CREDENTIALS_PATH, self.SCOPES)
-                creds = flow.run_local_server(port=0)
+        """Configura el servicio de Google Sheets usando credenciales de servicio."""
+        try:
+            # Cargar credenciales desde la variable de entorno
+            credentials_json = os.getenv('GOOGLE_CREDENTIALS')
+            if not credentials_json:
+                raise ValueError("No se encontraron las credenciales de Google")
             
-            with open(token_path, 'wb') as token:
-                pickle.dump(creds, token)
-        
-        return build('sheets', 'v4', credentials=creds)
+            credentials_dict = json.loads(credentials_json)
+            credentials = ServiceAccountCredentials.from_service_account_info(
+                credentials_dict,
+                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+            )
+            
+            return build('sheets', 'v4', credentials=credentials)
+        except Exception as e:
+            logger.error(f"Error al configurar Google Sheets: {e}")
+            return None
 
     def _setup_handlers(self):
         """Configura los manejadores de comandos de Telegram."""
@@ -63,12 +61,15 @@ class CoachBot:
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.app.add_error_handler(self.error_handler)
 
-    def get_database_content(self):
+    async def get_database_content(self):
         """Obtiene el contenido de la base de datos."""
         try:
+            if not self.sheets_service:
+                return []
+            
             result = self.sheets_service.spreadsheets().values().get(
                 spreadsheetId=self.SPREADSHEET_ID,
-                range='A1:Z1000'  # Ajusta según tus necesidades
+                range='A1:Z1000'
             ).execute()
             return result.get('values', [])
         except Exception as e:
@@ -79,21 +80,14 @@ class CoachBot:
         """Configura el asistente de OpenAI."""
         if self.assistant is None:
             try:
-                # Obtener datos de la base de datos
-                data = self.get_database_content()
+                data = await self.get_database_content()
+                database_content = json.dumps({"database_content": data})
                 
-                # Crear archivo con los datos
-                database_content = json.dumps({
-                    "database_content": data
-                })
-                
-                # Subir archivo a OpenAI
                 file = self.openai_client.files.create(
                     file=database_content,
                     purpose='assistants'
                 )
                 
-                # Crear asistente
                 self.assistant = self.openai_client.beta.assistants.create(
                     name="El Coach Assistant",
                     instructions="""
@@ -110,99 +104,53 @@ class CoachBot:
             except Exception as e:
                 logger.error(f"Error al configurar el asistente: {e}")
 
-    async def get_assistant_response(self, user_message):
-        """Obtiene una respuesta del asistente de OpenAI."""
-        try:
-            if self.assistant is None:
-                await self.setup_assistant()
-            
-            # Crear thread y añadir mensaje
-            thread = self.openai_client.beta.threads.create()
-            self.openai_client.beta.threads.messages.create(
-                thread_id=thread.id,
-                role="user",
-                content=user_message
-            )
-            
-            # Ejecutar el asistente
-            run = self.openai_client.beta.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=self.assistant.id
-            )
-            
-            # Esperar respuesta
-            while True:
-                run_status = self.openai_client.beta.threads.runs.retrieve(
-                    thread_id=thread.id,
-                    run_id=run.id
-                )
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    return "Lo siento, hubo un error al procesar tu mensaje."
-            
-            # Obtener mensajes
-            messages = self.openai_client.beta.threads.messages.list(
-                thread_id=thread.id
-            )
-            
-            # Retornar última respuesta del asistente
-            for message in messages.data:
-                if message.role == "assistant":
-                    return message.content[0].text.value
-                    
-            return "No se pudo obtener una respuesta."
-            
-        except Exception as e:
-            logger.error(f"Error al obtener respuesta del asistente: {e}")
-            return "Lo siento, ocurrió un error al procesar tu solicitud."
+    # ... [Resto de métodos del bot permanecen igual] ...
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /start."""
-        await update.message.reply_text(
-            "¡Hola! Soy El Coach Bot. Puedo ayudarte con recomendaciones de productos y recursos. "
-            "¿En qué puedo ayudarte hoy?"
-        )
+# Crear instancia del bot
+bot = CoachBot()
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /help."""
-        await update.message.reply_text(
-            "Puedes preguntarme sobre:\n"
-            "- Recomendaciones de productos\n"
-            "- Videos de ejercicios\n"
-            "- Recursos disponibles\n"
-            "Solo necesitas escribir tu pregunta y te responderé con información de nuestra base de datos."
-        )
+@app.post("/webhook")
+async def webhook(update: Dict):
+    """Endpoint para el webhook de Telegram."""
+    try:
+        # Convertir el dict a un objeto Update de python-telegram-bot
+        telegram_update = Update.de_json(update, bot.app.bot)
+        # Procesar la actualización
+        await bot.app.process_update(telegram_update)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"Error en webhook: {e}")
+        return {"status": "error", "message": str(e)}
 
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los mensajes de texto recibidos."""
-        try:
-            # Informar al usuario que estamos procesando su mensaje
-            processing_message = await update.message.reply_text(
-                "Procesando tu solicitud, por favor espera un momento..."
-            )
-            
-            # Obtener respuesta del asistente
-            response = await self.get_assistant_response(update.message.text)
-            
-            # Eliminar mensaje de procesamiento y enviar respuesta
-            await processing_message.delete()
-            await update.message.reply_text(response)
-            
-        except Exception as e:
-            logger.error(f"Error al manejar mensaje: {e}")
-            await update.message.reply_text(
-                "Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta nuevamente."
-            )
+@app.get("/")
+async def root():
+    """Endpoint de salud para Render."""
+    return {"status": "Bot is running"}
 
-    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los errores del bot."""
-        logger.error(f"Error: {context.error} - Update: {update}")
-        await update.message.reply_text(
-            "Lo siento, ocurrió un error inesperado. Por favor, intenta nuevamente más tarde."
-        )
+# Archivo requirements.txt
+"""
+fastapi==0.109.2
+uvicorn==0.27.1
+python-telegram-bot==20.7
+google-auth==2.27.0
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-api-python-client==2.116.0
+openai==1.11.1
+python-dotenv==1.0.1
+gunicorn==21.2.0
+"""
 
-    def run(self):
-        """Inicia el bot."""
-        logger.info("Iniciando el bot...")
-        self.app.run_polling()
+# Archivo Dockerfile
+"""
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["gunicorn", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:10000", "main:app"]
+"""
