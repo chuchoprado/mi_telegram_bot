@@ -40,7 +40,19 @@ except Exception as e:
 
 # ====== CONFIGURACIÓN DEL BOT DE TELEGRAM ======
 application = Application.builder().token(TOKEN).build()
-application.initialize()
+
+async def start(update: Update, context):
+    """Mensaje de bienvenida."""
+    await update.message.reply_text("¡Hola! Soy tu bot de MeditaHub. ¿En qué puedo ayudarte?")
+
+async def handle_message(update: Update, context):
+    """Procesar mensajes de texto."""
+    user_message = update.message.text.strip().lower() if update.message.text else ""
+    await update.message.reply_text(f"Recibí tu mensaje: {user_message}")
+
+# ====== REGISTRO DE HANDLERS ======
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 # ====== SERVIDOR FLASK ======
 app = Flask(__name__)
@@ -54,25 +66,26 @@ async def webhook():
     """Procesa las actualizaciones de Telegram desde el webhook."""
     try:
         update = Update.de_json(request.get_json(), application.bot)
-        await application.process_update(update)
+        await application.update_queue.put(update)
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
     return "OK", 200
 
-# ====== HANDLERS DE TELEGRAM ======
-async def start(update: Update, context):
-    """Mensaje de bienvenida."""
-    await update.message.reply_text("¡Hola! Soy tu bot de MeditaHub. ¿En qué puedo ayudarte?")
-
-async def handle_message(update: Update, context):
-    user_message = update.message.text.strip().lower() if update.message.text else ""
-    await update.message.reply_text(f"Recibí tu mensaje: {user_message}")
-
-# ====== REGISTRO DE HANDLERS ======
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT, handle_message))
-
 # ====== EJECUCIÓN ======
+async def run():
+    """Iniciar el bot con webhook en Render."""
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+
 if __name__ == "__main__":
+    import threading
+    
+    def run_telegram():
+        asyncio.run(run())
+
+    threading.Thread(target=run_telegram, daemon=True).start()
+
+    # Iniciar Flask para el Webhook
     app.run(host="0.0.0.0", port=10000)
