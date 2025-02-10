@@ -52,11 +52,11 @@ def home():
     return "El bot está activo."
 
 @app.route(f"/{TOKEN}", methods=["POST"])
-async def webhook():
-    """Procesa las actualizaciones de Telegram."""
+def webhook():
+    """Procesa las actualizaciones de Telegram de forma síncrona."""
     try:
         update = Update.de_json(request.get_json(), application.bot)
-        await application.process_update(update)  # ✅ Ejecutar de manera asincrónica
+        application.update_queue.put(update)
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
