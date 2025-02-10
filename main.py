@@ -31,6 +31,9 @@ class CoachBot:
         self.app.initialize()  # 🔥 Ahora la aplicación se inicializa correctamente
         self._setup_handlers()
         
+        # Inicializar procesamiento de mensajes
+        self.app.run_polling()  # 🔥 Ahora se asegura que el bot procesa los mensajes
+
         # Inicializar Google Sheets
         self._init_sheets()
 
@@ -180,4 +183,3 @@ async def webhook(request: Request):
 async def health_check():
     """Endpoint de verificación"""
     return {"status": "alive"}
-
