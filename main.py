@@ -65,7 +65,7 @@ async def webhook():
 # ====== HANDLERS DE TELEGRAM ======
 async def start(update: Update, context):
     """Mensaje de bienvenida."""
-    await update.message.reply_text("¡Hola! Soy tu bot de MeditaHub. ¿En qué puedo ayudarte?")
+    await update.message.reply_text("¡Hola! Soy tu bot El Coach de MeditaHub y fui creado para ayudarte a alcanzar tus objetivos. ¿En qué puedo ayudarte?")
 
 async def handle_message(update: Update, context):
     user_message = update.message.text.strip().lower() if update.message.text else ""
