@@ -1,124 +1,208 @@
-import os
-import sys
-import logging
-import traceback
-import openai
-import asyncio
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
 from openai import OpenAI
-import gspread
-from gtts import gTTS
-from flask import Flask, request
-from oauth2client.service_account import ServiceAccountCredentials
-from telegram import Update, Voice
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import os.path
+import pickle
+import json
+import logging
 
-# ====== CONFIGURACIÓN DE LOGGING ======
+# Configurar logging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler("bot_debug.log"),
-    ],
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# ====== CONFIGURACIÓN DE TOKENS ======
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-ASSISTANT_ID = os.getenv("ASSISTANT_ID")
-CREDENTIALS_FILE = "/etc/secrets/credentials.json"
-SPREADSHEET_NAME = "Whitelist"
+class CoachBot:
+    def __init__(self, telegram_token, spreadsheet_id, credentials_path):
+        # Configuración de tokens y credenciales
+        self.TELEGRAM_TOKEN = telegram_token
+        self.SPREADSHEET_ID = spreadsheet_id
+        self.CREDENTIALS_PATH = /etc/secrets/credentials.json
+        self.SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly']
+        
+        # Inicializar servicios
+        self.sheets_service = self._setup_sheets_service()
+        self.openai_client = OpenAI()  # Asegúrate de tener configurada tu API key
+        self.assistant = None
+        
+        # Crear la aplicación de Telegram
+        self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
+        self._setup_handlers()
 
-# ====== CLIENTE OPENAI ======
-try:
-    if not OPENAI_API_KEY:
-        raise ValueError("❌ La variable de entorno OPENAI_API_KEY no está definida.")
-    client = OpenAI(api_key=OPENAI_API_KEY)
-    logger.info("✅ OpenAI Client inicializado correctamente.")
-except Exception as e:
-    logger.error(f"OpenAI Client Initialization Error: {e}")
-    sys.exit(1)
-
-# ====== CONFIGURACIÓN DEL BOT DE TELEGRAM ======
-application = Application.builder().token(TOKEN).build()
-application.initialize()  # ✅ Inicializar correctamente la aplicación
-
-# ====== SERVIDOR FLASK ======
-app = Flask(__name__)  # ✅ Asegurar que Flask se inicializa correctamente
-
-@app.route("/", methods=["GET"])
-def home():
-    return "El bot está activo."
-
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    """Procesa las actualizaciones de Telegram de forma síncrona."""
-    try:
-        update = Update.de_json(request.get_json(), application.bot)
-        application.update_queue.put(update)
-    except Exception as e:
-        logger.error(f"Error en Webhook: {e}")
-        logger.error(traceback.format_exc())
-    return "OK", 200
-
-# ====== HANDLERS DE TELEGRAM ======
-async def start(update: Update, context):
-    """Mensaje de bienvenida."""
-    chat_id = update.effective_chat.id
-    logger.info("✅ Comando /start recibido")
-    
-    # Solicitar email para validación
-    await update.message.reply_text("¡Hola! Antes de continuar, por favor ingresa tu email para validarte.")
-    context.user_data["state"] = "waiting_email"
-
-async def handle_message(update: Update, context):
-    chat_id = update.effective_chat.id
-    user_message = update.message.text.strip().lower() if update.message.text else ""
-    
-    if context.user_data.get("state") == "waiting_email":
-        try:
-            sheet = get_sheet()
-            emails = [email.lower() for email in sheet.col_values(3)[1:]]
-            if user_message in emails:
-                context.user_data["state"] = "validated"
-                await update.message.reply_text("✅ Email validado. Puedes interactuar conmigo ahora.")
+    def _setup_sheets_service(self):
+        """Configura el servicio de Google Sheets."""
+        creds = None
+        token_path = 'token.pickle'
+        
+        if os.path.exists(token_path):
+            with open(token_path, 'rb') as token:
+                creds = pickle.load(token)
+                
+        if not creds or not creds.valid:
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
             else:
-                await update.message.reply_text("❌ Email no válido. Inténtalo nuevamente.")
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    self.CREDENTIALS_PATH, self.SCOPES)
+                creds = flow.run_local_server(port=0)
+            
+            with open(token_path, 'wb') as token:
+                pickle.dump(creds, token)
+        
+        return build('sheets', 'v4', credentials=creds)
+
+    def _setup_handlers(self):
+        """Configura los manejadores de comandos de Telegram."""
+        self.app.add_handler(CommandHandler("start", self.start_command))
+        self.app.add_handler(CommandHandler("help", self.help_command))
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        self.app.add_error_handler(self.error_handler)
+
+    def get_database_content(self):
+        """Obtiene el contenido de la base de datos."""
+        try:
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.SPREADSHEET_ID,
+                range='A1:Z1000'  # Ajusta según tus necesidades
+            ).execute()
+            return result.get('values', [])
         except Exception as e:
-            logger.error(f"Error en validación de email: {e}")
-            await update.message.reply_text("❌ Hubo un error al validar tu email. Intenta más tarde.")
-        return
-    
-    if context.user_data.get("state") != "validated":
-        await update.message.reply_text("Por favor, proporciona tu email primero para validarte.")
-        return
-    
-    await update.message.reply_text(f"Recibí tu mensaje: {user_message}")
+            logger.error(f"Error al obtener datos de Google Sheets: {e}")
+            return []
 
-async def handle_voice(update: Update, context):
-    """Procesa los mensajes de voz y responde con un mensaje de texto."""
-    voice = update.message.voice
-    file = await context.bot.get_file(voice.file_id)
-    file_path = f"voice_{update.message.message_id}.ogg"
-    await file.download(file_path)
-    
-    await update.message.reply_text("✅ Recibí tu mensaje de voz. Aún no puedo procesarlo, pero estoy en ello.")
+    async def setup_assistant(self):
+        """Configura el asistente de OpenAI."""
+        if self.assistant is None:
+            try:
+                # Obtener datos de la base de datos
+                data = self.get_database_content()
+                
+                # Crear archivo con los datos
+                database_content = json.dumps({
+                    "database_content": data
+                })
+                
+                # Subir archivo a OpenAI
+                file = self.openai_client.files.create(
+                    file=database_content,
+                    purpose='assistants'
+                )
+                
+                # Crear asistente
+                self.assistant = self.openai_client.beta.assistants.create(
+                    name="El Coach Assistant",
+                    instructions="""
+                    Eres un asistente que proporciona recomendaciones basadas únicamente 
+                    en la base de datos proporcionada. Solo debes recomendar productos, 
+                    videos o recursos que estén listados en la base de datos.
+                    """,
+                    model="gpt-4-turbo-preview",
+                    tools=[{"type": "retrieval"}],
+                    file_ids=[file.id]
+                )
+                
+                logger.info("Asistente configurado exitosamente")
+            except Exception as e:
+                logger.error(f"Error al configurar el asistente: {e}")
 
-# ====== REGISTRO DE HANDLERS ======
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT, handle_message))
-application.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    async def get_assistant_response(self, user_message):
+        """Obtiene una respuesta del asistente de OpenAI."""
+        try:
+            if self.assistant is None:
+                await self.setup_assistant()
+            
+            # Crear thread y añadir mensaje
+            thread = self.openai_client.beta.threads.create()
+            self.openai_client.beta.threads.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=user_message
+            )
+            
+            # Ejecutar el asistente
+            run = self.openai_client.beta.threads.runs.create(
+                thread_id=thread.id,
+                assistant_id=self.assistant.id
+            )
+            
+            # Esperar respuesta
+            while True:
+                run_status = self.openai_client.beta.threads.runs.retrieve(
+                    thread_id=thread.id,
+                    run_id=run.id
+                )
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    return "Lo siento, hubo un error al procesar tu mensaje."
+            
+            # Obtener mensajes
+            messages = self.openai_client.beta.threads.messages.list(
+                thread_id=thread.id
+            )
+            
+            # Retornar última respuesta del asistente
+            for message in messages.data:
+                if message.role == "assistant":
+                    return message.content[0].text.value
+                    
+            return "No se pudo obtener una respuesta."
+            
+        except Exception as e:
+            logger.error(f"Error al obtener respuesta del asistente: {e}")
+            return "Lo siento, ocurrió un error al procesar tu solicitud."
 
-# ====== EJECUCIÓN ======
-if __name__ == "__main__":
-    import threading
-    
-    # Iniciar el bot en un hilo separado
-    def run_telegram():
-        application.run_polling()
-    
-    threading.Thread(target=run_telegram, daemon=True).start()
-    
-    # Iniciar Flask
-    app.run(host="0.0.0.0", port=10000)
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja el comando /start."""
+        await update.message.reply_text(
+            "¡Hola! Soy El Coach Bot. Puedo ayudarte con recomendaciones de productos y recursos. "
+            "¿En qué puedo ayudarte hoy?"
+        )
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja el comando /help."""
+        await update.message.reply_text(
+            "Puedes preguntarme sobre:\n"
+            "- Recomendaciones de productos\n"
+            "- Videos de ejercicios\n"
+            "- Recursos disponibles\n"
+            "Solo necesitas escribir tu pregunta y te responderé con información de nuestra base de datos."
+        )
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja los mensajes de texto recibidos."""
+        try:
+            # Informar al usuario que estamos procesando su mensaje
+            processing_message = await update.message.reply_text(
+                "Procesando tu solicitud, por favor espera un momento..."
+            )
+            
+            # Obtener respuesta del asistente
+            response = await self.get_assistant_response(update.message.text)
+            
+            # Eliminar mensaje de procesamiento y enviar respuesta
+            await processing_message.delete()
+            await update.message.reply_text(response)
+            
+        except Exception as e:
+            logger.error(f"Error al manejar mensaje: {e}")
+            await update.message.reply_text(
+                "Lo siento, ocurrió un error al procesar tu mensaje. Por favor, intenta nuevamente."
+            )
+
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja los errores del bot."""
+        logger.error(f"Error: {context.error} - Update: {update}")
+        await update.message.reply_text(
+            "Lo siento, ocurrió un error inesperado. Por favor, intenta nuevamente más tarde."
+        )
+
+    def run(self):
+        """Inicia el bot."""
+        logger.info("Iniciando el bot...")
+        self.app.run_polling()
