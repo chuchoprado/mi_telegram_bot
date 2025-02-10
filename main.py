@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ====== CONFIGURACIÓN DE TOKENS ======
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7804507023:AAE4FxAeFJawgm7b64eLAswiOCmRZXg0Fzw")
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 CREDENTIALS_FILE = "/etc/secrets/credentials.json"
@@ -40,23 +40,9 @@ except Exception as e:
     logger.error(f"OpenAI Client Initialization Error: {e}")
     sys.exit(1)
 
-# ====== CONEXIÓN A GOOGLE SHEETS ======
-def get_sheet():
-    try:
-        credentials_path = os.path.expanduser(CREDENTIALS_FILE)
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        credentials = ServiceAccountCredentials.from_json_keyfile_name(credentials_path, scope)
-        client = gspread.authorize(credentials)
-        sheet = client.open(SPREADSHEET_NAME).sheet1
-        logger.info("✅ Conexión a Google Sheets exitosa.")
-        return sheet
-    except Exception as e:
-        logger.error(f"❌ Error al conectar con Google Sheets: {e}")
-        raise
-
 # ====== CONFIGURACIÓN DEL BOT DE TELEGRAM ======
 application = Application.builder().token(TOKEN).build()
-application.initialize()
+application.initialize()  # ✅ Inicializar correctamente la aplicación
 
 # ====== SERVIDOR FLASK ======
 app = Flask(__name__)  # ✅ Asegurar que Flask se inicializa correctamente
@@ -76,17 +62,14 @@ async def webhook():
         logger.error(traceback.format_exc())
     return "OK", 200
 
-# ====== GESTIÓN DE USUARIOS VALIDADOS ======
-validated_users = {}
-
 # ====== HANDLERS DE TELEGRAM ======
 async def start(update: Update, context):
-    """Mensaje de bienvenida y validación de email."""
+    """Mensaje de bienvenida."""
     chat_id = update.effective_chat.id
-    if chat_id in validated_users:
-        await update.message.reply_text("✅ Ya estás validado. Puedes interactuar conmigo.")
-        return
-    await update.message.reply_text("Por favor, proporciona tu email para validar el acceso:")
+    logger.info("✅ Comando /start recibido")
+    
+    # Solicitar email para validación
+    await update.message.reply_text("¡Hola! Antes de continuar, por favor ingresa tu email para validarte.")
     context.user_data["state"] = "waiting_email"
 
 async def handle_message(update: Update, context):
@@ -98,20 +81,17 @@ async def handle_message(update: Update, context):
             sheet = get_sheet()
             emails = [email.lower() for email in sheet.col_values(3)[1:]]
             if user_message in emails:
-                validated_users[chat_id] = user_message
                 context.user_data["state"] = "validated"
-                await update.message.reply_text("✅ Acceso concedido. ¡Bienvenido!")
-                return
+                await update.message.reply_text("✅ Email validado. Puedes interactuar conmigo ahora.")
             else:
                 await update.message.reply_text("❌ Email no válido. Inténtalo nuevamente.")
-                return
         except Exception as e:
-            logger.error(f"Error durante la validación: {e}")
+            logger.error(f"Error en validación de email: {e}")
             await update.message.reply_text("❌ Hubo un error al validar tu email. Intenta más tarde.")
-            return
+        return
     
-    if chat_id not in validated_users:
-        await start(update, context)
+    if context.user_data.get("state") != "validated":
+        await update.message.reply_text("Por favor, proporciona tu email primero para validarte.")
         return
     
     await update.message.reply_text(f"Recibí tu mensaje: {user_message}")
@@ -122,6 +102,7 @@ async def handle_voice(update: Update, context):
     file = await context.bot.get_file(voice.file_id)
     file_path = f"voice_{update.message.message_id}.ogg"
     await file.download(file_path)
+    
     await update.message.reply_text("✅ Recibí tu mensaje de voz. Aún no puedo procesarlo, pero estoy en ello.")
 
 # ====== REGISTRO DE HANDLERS ======
