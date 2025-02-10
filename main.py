@@ -9,7 +9,7 @@ import gspread
 from gtts import gTTS
 from flask import Flask, request
 from oauth2client.service_account import ServiceAccountCredentials
-from telegram import Update
+from telegram import Update, Voice
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
 # ====== CONFIGURACIÓN DE LOGGING ======
@@ -71,9 +71,19 @@ async def handle_message(update: Update, context):
     user_message = update.message.text.strip().lower() if update.message.text else ""
     await update.message.reply_text(f"Recibí tu mensaje: {user_message}")
 
+async def handle_voice(update: Update, context):
+    """Procesa los mensajes de voz y responde con un mensaje de texto."""
+    voice = update.message.voice
+    file = await context.bot.get_file(voice.file_id)
+    file_path = f"voice_{update.message.message_id}.ogg"
+    await file.download(file_path)
+    
+    await update.message.reply_text("✅ Recibí tu mensaje de voz. Aún no puedo procesarlo, pero estoy en ello.")
+
 # ====== REGISTRO DE HANDLERS ======
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.TEXT, handle_message))
+application.add_handler(MessageHandler(filters.VOICE, handle_voice))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
