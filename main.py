@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ====== CONFIGURACIÓN DE TOKENS ======
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TOKEN = "7804507023:AAE4FxAeFJawgm7b64eLAswiOCmRZXg0Fzw"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 CREDENTIALS_FILE = "/etc/secrets/credentials.json"
