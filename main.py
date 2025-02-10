@@ -1,4 +1,3 @@
-# main.py
 import os
 from fastapi import FastAPI, Request
 from telegram import Update
@@ -167,7 +166,10 @@ bot = CoachBot()
 async def webhook(request: Request):
     """Endpoint para el webhook de Telegram"""
     try:
-        update = Update.de_json(await request.json(), bot.app.bot)
+        data = await request.json()
+        logger.info(f"Webhook recibido: {json.dumps(data, indent=2)}")  # 🔥 Ahora con más detalles en logs
+        
+        update = Update.de_json(data, bot.app.bot)
         await bot.app.update_queue.put(update)  # 🔥 Ahora los mensajes se procesan correctamente
         return {"status": "ok"}
     except Exception as e:
@@ -178,3 +180,4 @@ async def webhook(request: Request):
 async def health_check():
     """Endpoint de verificación"""
     return {"status": "alive"}
+
