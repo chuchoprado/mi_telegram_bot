@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ====== CONFIGURACIÓN DE TOKENS ======
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # ✅ Corregido para usar la variable correcta
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # ✅ Uso correcto
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 CREDENTIALS_FILE = "/etc/secrets/credentials.json"
@@ -50,14 +50,12 @@ app = Flask(__name__)  # ✅ Asegurar que Flask se inicializa correctamente
 def home():
     return "El bot está activo."
 
-@app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])  # ✅ Corregido
-def webhook():
-    """Procesa las actualizaciones de Telegram."""
+@app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
+async def webhook():
+    """Procesa las actualizaciones de Telegram correctamente."""
     try:
         update = Update.de_json(request.get_json(), application.bot)
-
-        # ✅ Se ejecuta correctamente como async evitando el RuntimeWarning
-        asyncio.run_coroutine_threadsafe(application.update_queue.put(update), application.bot.loop)
+        await application.update_queue.put(update)  # ✅ Ahora es async y se ejecuta sin problemas
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
@@ -157,4 +155,6 @@ application.add_handler(MessageHandler(filters.TEXT, handle_message))
 
 # ====== EJECUCIÓN ======
 if __name__ == "__main__":
+    import threading
+    threading.Thread(target=application.run_polling, daemon=True).start()  # ✅ Corre Telegram en un hilo separado
     app.run(host="0.0.0.0", port=10000)
