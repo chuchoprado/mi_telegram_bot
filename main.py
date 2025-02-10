@@ -51,10 +51,10 @@ def home():
 # ✅ **CORRECCIÓN EN EL WEBHOOK (Eliminado async y uso de put_nowait())**
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    """Procesa las actualizaciones de Telegram sin usar async."""
+    """Procesa las actualizaciones de Telegram directamente."""
     try:
         update = Update.de_json(request.get_json(), application.bot)
-        application.update_queue.put_nowait(update)  # ✅ Evita usar await en Flask
+        application.process_update(update)  # ✅ Procesa el update directamente
     except Exception as e:
         logger.error(f"Error en Webhook: {e}")
         logger.error(traceback.format_exc())
