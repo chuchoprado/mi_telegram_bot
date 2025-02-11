@@ -39,13 +39,17 @@ class CoachBot:
         # Inicialización asíncrona sin bloquear el event loop
         asyncio.create_task(self.async_init())
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /start"""
-    logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
+    async def async_init(self):
+        """Inicialización asíncrona"""
+        await self.app.initialize()
 
-    await update.message.reply_text(
-        "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
-    )
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja el comando /start"""
+        logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
+
+        await update.message.reply_text(
+            "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
+        )
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
@@ -78,12 +82,6 @@ class CoachBot:
         except Exception as e:
             logger.error(f"Error obteniendo datos de sheets: {e}")
             return []
-
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /start"""
-        await update.message.reply_text(
-            "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
-        )
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /help"""
