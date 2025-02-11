@@ -1,4 +1,5 @@
 import os
+import asyncio  # ✅ Importa asyncio
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -28,14 +29,17 @@ class CoachBot:
         
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-        self.app.initialize()  # 🔥 Ahora la aplicación se inicializa correctamente
-        self._setup_handlers()
+        
+        # 🔥 Ahora inicializa correctamente la aplicación
+        asyncio.run(self.async_init())  
 
-        # 🔥 Se elimina `run_polling()`, ya que usamos Webhooks
-        # self.app.run_polling()  ❌ REMOVIDO ❌
+        self._setup_handlers()
 
         # Inicializar Google Sheets
         self._init_sheets()
+
+    async def async_init(self):
+        await self.app.initialize()  # 🔥 Ahora es esperado correctamente
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
