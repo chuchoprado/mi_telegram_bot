@@ -29,11 +29,13 @@ class CoachBot:
         
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-        asyncio.create_task(self.async_init())  # 🔥 Ahora la inicialización es asíncrona sin bloquear
         self._setup_handlers()
-
-        # Inicializar Google Sheets
         self._init_sheets()
+        
+    async def async_init(self):
+        """Inicialización asíncrona"""
+        await self.app.initialize()
+        # await self.app.start()  # Descomenta si es necesario
 
     async def async_init(self):
         await self.app.initialize()
