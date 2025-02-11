@@ -177,17 +177,18 @@ async def webhook(request: Request):
     """Endpoint para el webhook de Telegram"""
     try:
         data = await request.json()
-        logs.append(json.dumps(data, indent=2))  # Guardar logs en memoria
-        logger.info(f"Webhook recibido: {json.dumps(data, indent=2)}")
-        
-        if "message" not in data or "text" not in data["message"]:
-            return {"status": "error", "message": "Mensaje sin texto"}
+        logger.info(f"📩 Webhook recibido: {json.dumps(data, indent=2)}")  # 🔥 Muestra todo el JSON recibido
+
+        # Validar si el update tiene un campo 'date' antes de procesarlo
+        if "message" in data and "date" not in data["message"]:
+            logger.error("❌ Error: 'date' no encontrado en el mensaje recibido.")
+            return {"status": "error", "message": "'date' no encontrado en el mensaje"}
 
         update = Update.de_json(data, bot.app.bot)
-        await bot.app.update_queue.put(update)
+        await bot.app.update_queue.put(update)  # 🔥 Ahora los mensajes se procesan correctamente
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"Error en webhook: {e}")
+        logger.error(f"❌ Error en webhook: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/")
