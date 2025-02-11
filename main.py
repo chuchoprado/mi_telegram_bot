@@ -1,5 +1,5 @@
 import os
-import asyncio  # ✅ Importa asyncio
+import asyncio
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -29,17 +29,14 @@ class CoachBot:
         
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-        
-        # 🔥 Ahora inicializa correctamente la aplicación
-        asyncio.run(self.async_init())  
-
+        asyncio.create_task(self.async_init())  # 🔥 Ahora la inicialización es asíncrona sin bloquear
         self._setup_handlers()
 
         # Inicializar Google Sheets
         self._init_sheets()
 
     async def async_init(self):
-        await self.app.initialize()  # 🔥 Ahora es esperado correctamente
+        await self.app.initialize()
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
