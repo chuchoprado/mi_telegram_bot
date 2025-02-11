@@ -40,8 +40,12 @@ class CoachBot:
         asyncio.create_task(self.async_init())
 
     async def async_init(self):
-        """Inicialización asíncrona"""
-        await self.app.initialize()
+    """Inicialización asíncrona"""
+    await self.app.initialize()
+    await self.app.start()  # 🔥 Ahora sí arranca el bot
+
+# Ejecutar async_init() en el event loop
+asyncio.get_event_loop().run_until_complete(self.async_init())  # 🔥 Ahora el bot se inicializa correctamente
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
