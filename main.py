@@ -173,14 +173,13 @@ async def webhook(request: Request):
     """Endpoint para el webhook de Telegram"""
     try:
         data = await request.json()
-        logger.info(f"📩 Webhook recibido: {json.dumps(data, indent=2)}")  # 🔥 Más detalles en logs
+        logger.info(f"Webhook recibido: {json.dumps(data, indent=2)}")  # 🔥 Ahora con más detalles en logs
         
         update = Update.de_json(data, bot.app.bot)
-        await bot.app.update_queue.put(update)  # 🔥 Asegura que el bot procese mensajes correctamente
-        
+        await bot.app.update_queue.put(update)  # 🔥 Ahora los mensajes se procesan correctamente
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"❌ Error en webhook: {e}")
+        logger.error(f"Error en webhook: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/")
