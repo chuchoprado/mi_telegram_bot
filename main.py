@@ -30,9 +30,9 @@ class CoachBot:
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         self.app.initialize()  # 🔥 Ahora la aplicación se inicializa correctamente
         self._setup_handlers()
-        
-        # Inicializar procesamiento de mensajes
-        self.app.run_polling()  # 🔥 Ahora se asegura que el bot procesa los mensajes
+
+        # 🔥 Se elimina `run_polling()`, ya que usamos Webhooks
+        # self.app.run_polling()  ❌ REMOVIDO ❌
 
         # Inicializar Google Sheets
         self._init_sheets()
