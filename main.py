@@ -1,5 +1,6 @@
 import os
 import asyncio
+import io
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 # Crear la aplicación FastAPI
 app = FastAPI()
 
+# Variable global para almacenar logs
+logs = []
+
 class CoachBot:
     def __init__(self):
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -31,13 +35,12 @@ class CoachBot:
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         self._setup_handlers()
         self._init_sheets()
-        
-    async def async_init(self):
-        """Inicialización asíncrona"""
-        await self.app.initialize()
-        # await self.app.start()  # Descomenta si es necesario
+
+        # Inicialización asíncrona sin bloquear el event loop
+        asyncio.create_task(self.async_init())
 
     async def async_init(self):
+        """Inicialización asíncrona"""
         await self.app.initialize()
 
     def _init_sheets(self):
@@ -100,9 +103,10 @@ class CoachBot:
                 # Obtener datos de sheets
                 data = await self.get_sheet_data()
                 
-                # Crear archivo para el asistente
+                # Crear archivo para el asistente con un objeto IO compatible con OpenAI
+                data_str = json.dumps({"data": data})
                 file = self.openai_client.files.create(
-                    file=json.dumps({"data": data}),
+                    file=("data.json", io.StringIO(data_str)),
                     purpose='assistants'
                 )
                 
@@ -173,10 +177,14 @@ async def webhook(request: Request):
     """Endpoint para el webhook de Telegram"""
     try:
         data = await request.json()
-        logger.info(f"Webhook recibido: {json.dumps(data, indent=2)}")  # 🔥 Ahora con más detalles en logs
+        logs.append(json.dumps(data, indent=2))  # Guardar logs en memoria
+        logger.info(f"Webhook recibido: {json.dumps(data, indent=2)}")
         
+        if "message" not in data or "text" not in data["message"]:
+            return {"status": "error", "message": "Mensaje sin texto"}
+
         update = Update.de_json(data, bot.app.bot)
-        await bot.app.update_queue.put(update)  # 🔥 Ahora los mensajes se procesan correctamente
+        await bot.app.update_queue.put(update)
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"Error en webhook: {e}")
@@ -186,3 +194,8 @@ async def webhook(request: Request):
 async def health_check():
     """Endpoint de verificación"""
     return {"status": "alive"}
+
+@app.get("/logs")
+async def get_logs():
+    """Devuelve los últimos logs"""
+    return {"logs": logs}
