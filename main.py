@@ -198,7 +198,9 @@ async def health_check():
     """Endpoint de verificación"""
     return {"status": "alive"}
 
-@app.get("/logs")
-async def get_logs():
-    """Devuelve los últimos logs"""
-    return {"logs": logs}
+@app.get("/", include_in_schema=False)
+@app.head("/", include_in_schema=False)
+async def health_check():
+    """Endpoint de verificación de estado"""
+    return {"status": "alive"}
+
