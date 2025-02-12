@@ -167,16 +167,18 @@ class CoachBot:
             )
 
             # Generar una respuesta usando OpenAI
-            response = openai.Completion.create(
-                engine="text-davinci-003",
-                prompt=update.message.text,
-                max_tokens=150
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": update.message.text}
+                ]
             )
 
             await processing_msg.delete()
             
             # Enviar respuesta
-            await update.message.reply_text(response.choices[0].text.strip())
+            await update.message.reply_text(response['choices'][0]['message']['content'].strip())
 
         except Exception as e:
             logger.error(f"Error en handle_message: {e}")
