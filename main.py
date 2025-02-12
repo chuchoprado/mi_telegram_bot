@@ -55,11 +55,20 @@ class CoachBot:
             "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente."
         )
 
-        if not await self.is_user_whitelisted(update.message.chat.id):
+    async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Verifica el correo electrónico proporcionado por el usuario"""
+        user_email = update.message.text
+        chat_id = update.message.chat.id
+
+        if not await self.is_user_whitelisted(chat_id, user_email):
             await update.message.reply_text(
                 "Lo siento, tu correo no está en la lista blanca. No puedes acceder al bot."
             )
             return
+
+        await update.message.reply_text(
+            "¡Gracias! Tu correo ha sido verificado y ahora puedes usar el bot."
+        )
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
@@ -78,7 +87,7 @@ class CoachBot:
         """Configura los manejadores de Telegram"""
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
-        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.verify_email))
 
     async def get_sheet_data(self, range):
         """Obtiene datos de Google Sheets"""
@@ -94,11 +103,10 @@ class CoachBot:
             logger.error(f"Error obteniendo datos de sheets: {e}")
             return []
 
-    async def is_user_whitelisted(self, chat_id):
+    async def is_user_whitelisted(self, chat_id, user_email):
         """Verifica si el usuario está en la lista blanca"""
         email_range = 'A:Z'  # Cambiar el rango para buscar en toda la hoja
         emails = await self.get_sheet_data(email_range)
-        user_email = await self.get_user_email(chat_id)
         if any(user_email in sublist for sublist in emails):
             await self.update_telegram_user(chat_id, user_email)
             return True
