@@ -104,7 +104,7 @@ class CoachBot:
             logger.error(f"Error obteniendo datos de sheets: {e}")
             return []
 
-    async def is_user_whitelisted(self, user_email):
+   async def is_user_whitelisted(self, user_email):
     """Verifica si el usuario está en la lista blanca"""
     email_range = 'C2:C2000'  # Cambiar el rango para buscar en toda la hoja
     emails = await self.get_sheet_data(email_range)
