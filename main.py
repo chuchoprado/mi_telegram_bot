@@ -51,10 +51,6 @@ class CoachBot:
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
 
-        await update.message.reply_text(
-            "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente."
-        )
-
         if not await self.is_user_whitelisted(update.message.chat.id):
             await update.message.reply_text(
                 "Lo siento, tu correo no está en la lista blanca. No puedes acceder al bot."
@@ -62,7 +58,7 @@ class CoachBot:
             return
 
         await update.message.reply_text(
-            "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
+            "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente."
         )
 
     def _init_sheets(self):
@@ -159,33 +155,31 @@ class CoachBot:
                 )
                 
                 # Crear asistente
-                self.assistant = self.openai_client.beta.assistants.create(
+                self.assistant = self.openai_client.assistants.create(
                     name="Coach Assistant",
                     instructions="Asistente para recomendaciones basadas en la base de datos.",
-                    model="gpt-4-turbo-preview",
-                    tools=[{"type": "retrieval"}],
-                    file_ids=[file.id]
+                    model="gpt-4-turbo-preview"
                 )
 
             # Crear thread
-            thread = self.openai_client.beta.threads.create()
+            thread = self.openai_client.threads.create()
             
             # Añadir mensaje del usuario
-            self.openai_client.beta.threads.messages.create(
+            self.openai_client.threads.messages.create(
                 thread_id=thread.id,
                 role="user",
                 content=update.message.text
             )
             
             # Ejecutar el asistente
-            run = self.openai_client.beta.threads.runs.create(
+            run = self.openai_client.threads.runs.create(
                 thread_id=thread.id,
                 assistant_id=self.assistant.id
             )
             
             # Esperar respuesta
             while True:
-                run_status = self.openai_client.beta.threads.runs.retrieve(
+                run_status = self.openai_client.threads.runs.retrieve(
                     thread_id=thread.id,
                     run_id=run.id
                 )
@@ -199,7 +193,7 @@ class CoachBot:
                     return
 
             # Obtener la respuesta
-            messages = self.openai_client.beta.threads.messages.list(
+            messages = self.openai_client.threads.messages.list(
                 thread_id=thread.id
             )
             
