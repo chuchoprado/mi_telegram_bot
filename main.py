@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from openai import OpenAI
+import openai  # Importa la biblioteca de OpenAI
 import json
 import logging
 
@@ -29,7 +29,7 @@ class CoachBot:
         self.SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
         self.assistant_id = os.getenv('ASSISTANT_ID')
         self.credentials_path = '/etc/secrets/credentials.json'
-        self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+        openai.api_key = os.getenv('OPENAI_API_KEY')  # Configura la clave de API de OpenAI
         self.sheets_service = None
         self.started = False  # Añadir bandera
 
@@ -166,49 +166,17 @@ class CoachBot:
                 "Procesando tu solicitud..."
             )
 
-            # Crear thread
-            thread = self.openai_client.threads.create()
-            
-            # Añadir mensaje del usuario
-            self.openai_client.threads.messages.create(
-                thread_id=thread.id,
-                role="user",
-                content=update.message.text
+            # Generar una respuesta usando OpenAI
+            response = openai.Completion.create(
+                engine="text-davinci-003",
+                prompt=update.message.text,
+                max_tokens=150
             )
-            
-            # Ejecutar el asistente
-            run = self.openai_client.threads.runs.create(
-                thread_id=thread.id,
-                assistant_id=self.assistant_id
-            )
-            
-            # Esperar respuesta
-            while True:
-                run_status = self.openai_client.threads.runs.retrieve(
-                    thread_id=thread.id,
-                    run_id=run.id
-                )
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    await processing_msg.delete()
-                    await update.message.reply_text(
-                        "Lo siento, hubo un error. Por favor intenta nuevamente."
-                    )
-                    return
 
-            # Obtener la respuesta
-            messages = self.openai_client.threads.messages.list(
-                thread_id=thread.id
-            )
-            
             await processing_msg.delete()
             
             # Enviar respuesta
-            for message in messages.data:
-                if message.role == "assistant":
-                    await update.message.reply_text(message.content[0].text.value)
-                    return
+            await update.message.reply_text(response.choices[0].text.strip())
 
         except Exception as e:
             logger.error(f"Error en handle_message: {e}")
