@@ -57,21 +57,22 @@ class CoachBot:
         )
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Verifica el correo electrónico proporcionado por el usuario"""
-        user_email = update.message.text
-        chat_id = update.message.chat.id
-        username = update.message.from_user.username  # Obtener el username de Telegram
+    """Verifica el correo electrónico proporcionado por el usuario"""
+    user_email = update.message.text.strip()
+    chat_id = update.message.chat.id
+    username = update.message.from_user.username or "Desconocido"  # Manejo de usuario sin username
 
-        if not await self.is_user_whitelisted(user_email):
-            await update.message.reply_text(
-                "Lo siento, tu correo no está en nuestra Base de Datos. No puedes acceder al bot, si deseas contacta con nuestro equipo en www.meditahub.com."
-            )
-            return
-
-        await self.update_telegram_user(chat_id, user_email, username)
+    if not await self.is_user_whitelisted(user_email):
         await update.message.reply_text(
-            "¡Gracias! Tu correo ha sido verificado y ahora puedes usar las funcionalidades del Coach e iniciar tu reto de 21 días."
+            "❌ Lo siento, tu correo no está en nuestra Base de Datos. No puedes acceder al bot. Si deseas, contacta con nuestro equipo en www.meditahub.com."
         )
+        return
+
+    await self.update_telegram_user(chat_id, user_email, username)
+    await update.message.reply_text(
+        "✅ ¡Gracias! Tu correo ha sido verificado y ahora puedes usar las funcionalidades del Coach e iniciar tu reto de 21 días.\n"
+        "Escríbeme cualquier pregunta para comenzar 😊"
+    )
 
         # Continuar con el asistente de OpenAI
         await self.handle_message(update, context)
@@ -159,30 +160,40 @@ class CoachBot:
         )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los mensajes recibidos"""
-        try:
-            # Mensaje de procesamiento
-            processing_msg = await update.message.reply_text(
-                "Procesando tu solicitud..."
-            )
+    """Maneja los mensajes recibidos de los usuarios."""
+    try:
+        user_message = update.message.text.strip()
+        
+        # Evitar respuestas a mensajes vacíos
+        if not user_message:
+            return
+        
+        # Mensaje de procesamiento para dar feedback al usuario
+        processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud, un momento...")
 
-            # Generar una respuesta usando OpenAI
-            response = openai.Completion.create(
-                model="gpt-3.5-turbo",
-                prompt=update.message.text,
-                max_tokens=150
-            )
+        # Generar una respuesta usando OpenAI
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": user_message}],
+            max_tokens=150
+        )
 
-            await processing_msg.delete()
-            
-            # Enviar respuesta
-            await update.message.reply_text(response.choices[0].text.strip())
+        await processing_msg.delete()
 
-        except Exception as e:
-            logger.error(f"Error en handle_message: {e}")
-            await update.message.reply_text(
-                "Lo siento, ocurrió un error. Por favor intenta más tarde."
-            )
+        # Enviar respuesta si existe
+        if response and "choices" in response and response["choices"]:
+            reply_text = response["choices"][0]["message"]["content"].strip()
+            await update.message.reply_text(reply_text)
+        else:
+            await update.message.reply_text("😕 Lo siento, no pude generar una respuesta en este momento.")
+
+    except openai.error.OpenAIError as e:
+        logger.error(f"❌ Error en OpenAI: {e}")
+        await update.message.reply_text("❌ Hubo un problema al obtener una respuesta. Inténtalo de nuevo más tarde.")
+
+    except Exception as e:
+        logger.error(f"❌ Error en handle_message: {e}")
+        await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def test_google_sheets_connection(self):
         """Prueba la conexión con Google Sheets"""
