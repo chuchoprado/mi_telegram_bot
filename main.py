@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class CoachBot:
 
     async def is_user_whitelisted(self, chat_id):
         """Verifica si el usuario está en la lista blanca"""
-        email_range = 'whitelist!C:C'  # Cambiar el rango a columna C
+        email_range = 'A:Z'  # Cambiar el rango para buscar en toda la hoja
         emails = await self.get_sheet_data(email_range)
         user_email = await self.get_user_email(chat_id)
         if any(user_email in sublist for sublist in emails):
@@ -145,7 +145,7 @@ class CoachBot:
             # Inicializar asistente si no existe
             if not self.assistant:
                 # Obtener datos de sheets
-                data = await self.get_sheet_data('A1:Z1000')
+                data = await self.get_sheet_data('A:Z')
                 
                 # Crear archivo para el asistente con un objeto IO compatible con OpenAI
                 data_str = json.dumps({"data": data})
