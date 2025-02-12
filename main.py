@@ -175,8 +175,9 @@ class CoachBot:
 # Crear instancia del bot
 bot = CoachBot()
 
-# Ejecutar async_init() en el event loop
-asyncio.get_event_loop().run_until_complete(bot.async_init())  # 🔥 Ahora el bot se inicializa correctamente
+@app.on_event("startup")
+async def startup_event():
+    await bot.async_init()
 
 @app.post("/webhook")
 async def webhook(request: Request):
