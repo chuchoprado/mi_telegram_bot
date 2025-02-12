@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levellevelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ class CoachBot:
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
         self.SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
         self.assistant_id = os.getenv('ASSISTANT_ID')
+        self.credentials_path = '/etc/secrets/credentials.json'
         self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.sheets_service = None
         self.started = False  # Añadir bandera
@@ -74,10 +75,9 @@ class CoachBot:
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
         try:
-            creds_dict = json.loads(os.getenv('GOOGLE_CREDENTIALS', '{}'))
-            credentials = service_account.Credentials.from_service_account_info(
-                creds_dict,
-                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
+            credentials = service_account.Credentials.from_service_account_file(
+                self.credentials_path,
+                scopes=['https://www.googleapis.com/auth/spreadsheets']
             )
             self.sheets_service = build('sheets', 'v4', credentials=credentials)
             logger.info("Conexión con Google Sheets inicializada correctamente.")
