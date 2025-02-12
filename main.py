@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levellevelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -116,7 +116,7 @@ class CoachBot:
             body = {
                 "values": [[chat_id]]
             }
-            range = f'whitelist!F{email}'  # Actualizar la columna F con el chat_id
+            range = f'whitelist!F2:F2'  # Actualiza el rango a una celda específica
             self.sheets_service.spreadsheets().values().update(
                 spreadsheetId=self.SPREADSHEET_ID,
                 range=range,
