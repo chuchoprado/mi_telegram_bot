@@ -185,7 +185,6 @@ class CoachBot:
         await update.message.reply_text(
             "Lo siento, ocurrió un error. Por favor intenta más tarde."
         )
-
     async def test_google_sheets_connection(self):
         """Prueba la conexión con Google Sheets"""
         try:
