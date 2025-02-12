@@ -154,7 +154,7 @@ class CoachBot:
                 # Crear archivo para el asistente con un objeto IO compatible con OpenAI
                 data_str = json.dumps({"data": data})
                 file = self.openai_client.files.create(
-                    file=("data.json", io.StringIO(data_str)),
+                    file=("data.json", io.BytesIO(data_str.encode('utf-8'))),  # Cambiar a io.BytesIO
                     purpose='assistants'
                 )
                 
@@ -253,4 +253,3 @@ async def health_check():
 async def health_check():
     """Endpoint de verificación de estado"""
     return {"status": "alive"}
-    
