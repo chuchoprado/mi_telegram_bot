@@ -52,6 +52,34 @@ class CoachBot:
         await update.message.reply_text(
             "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente e iniciar tu reto de 21 días."
         )
+async def get_sheet_data(self, range):
+    """Obtiene datos de Google Sheets"""
+    if not self.sheets_service:
+        return []
+    try:
+        result = self.sheets_service.spreadsheets().values().get(
+            spreadsheetId=self.SPREADSHEET_ID,
+            range=range
+        ).execute()
+        return result.get('values', [])
+    except Exception as e:
+        logger.error(f"❌ Error obteniendo datos de sheets: {e}")
+        return []
+
+async def is_user_whitelisted(self, user_email):
+    """Verifica si el usuario está en la lista blanca en Google Sheets"""
+    email_range = 'C2:C2000'  # Rango en la hoja donde se encuentran los correos
+    emails = await self.get_sheet_data(email_range)
+    logger.info(f"📄 Emails obtenidos de Google Sheets: {emails}")
+
+    # Buscar si el email está en la lista blanca
+    for sublist in emails:
+        if user_email in sublist:
+            logger.info(f"✅ El correo {user_email} está en la lista blanca.")
+            return True
+
+    logger.info(f"❌ El correo {user_email} NO está en la lista blanca.")
+    return False
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Verifica el correo electrónico proporcionado por el usuario"""
