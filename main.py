@@ -105,10 +105,16 @@ class CoachBot:
             return []
 
     async def is_user_whitelisted(self, user_email):
-        """Verifica si el usuario está en la lista blanca"""
-        email_range = 'A:Z'  # Cambiar el rango para buscar en toda la hoja
-        emails = await self.get_sheet_data(email_range)
-        return any(user_email in sublist for sublist in emails)
+    """Verifica si el usuario está en la lista blanca"""
+    email_range = 'C2:C2000'  # Cambiar el rango para buscar en toda la hoja
+    emails = await self.get_sheet_data(email_range)
+    logger.info(f"Emails obtenidos de Google Sheets: {emails}")
+    for sublist in emails:
+        if user_email in sublist:
+            logger.info(f"El correo {user_email} está en la lista blanca.")
+            return True
+    logger.info(f"El correo {user_email} NO está en la lista blanca.")
+    return False
 
     async def update_telegram_user(self, chat_id, email):
         """Actualiza el usuario de Telegram en la hoja de cálculo"""
@@ -116,7 +122,7 @@ class CoachBot:
             body = {
                 "values": [[chat_id]]
             }
-            range = f'whitelist!F2:F2'  # Actualiza el rango a una celda específica
+            range = f'whitelist!F2:F2000'  # Actualiza el rango a una celda específica
             self.sheets_service.spreadsheets().values().update(
                 spreadsheetId=self.SPREADSHEET_ID,
                 range=range,
