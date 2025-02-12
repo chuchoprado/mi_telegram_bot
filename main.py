@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -95,16 +95,35 @@ class CoachBot:
 
     async def is_user_whitelisted(self, chat_id):
         """Verifica si el usuario está en la lista blanca"""
-        email_range = 'whitelist!A:A'
+        email_range = 'whitelist!C:C'  # Cambiar el rango a columna C
         emails = await self.get_sheet_data(email_range)
         user_email = await self.get_user_email(chat_id)
-        return any(user_email in sublist for sublist in emails)
+        if any(user_email in sublist for sublist in emails):
+            await self.update_telegram_user(chat_id, user_email)
+            return True
+        return False
 
     async def get_user_email(self, chat_id):
         """Obtiene el correo electrónico del usuario a partir del chat_id"""
         # Implementa la lógica para obtener el correo electrónico del usuario a partir del chat_id
         # Esto puede depender de cómo se almacene y gestione la información del usuario
         return "user@example.com"  # Placeholder
+
+    async def update_telegram_user(self, chat_id, email):
+        """Actualiza el usuario de Telegram en la hoja de cálculo"""
+        try:
+            body = {
+                "values": [[chat_id]]
+            }
+            range = f'whitelist!F{email}'  # Actualizar la columna F con el chat_id
+            self.sheets_service.spreadsheets().values().update(
+                spreadsheetId=self.SPREADSHEET_ID,
+                range=range,
+                valueInputOption='RAW',
+                body=body
+            ).execute()
+        except Exception as e:
+            logger.error(f"Error actualizando usuario de Telegram: {e}")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /help"""
