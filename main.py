@@ -49,14 +49,18 @@ class CoachBot:
             await self.app.start()  # 🔥 Ahora sí arranca el bot
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /start"""
-        logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
+    """Maneja el comando /start"""
+    logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
 
-        if not await self.is_user_whitelisted(update.message.chat.id):
-            await update.message.reply_text(
-                "Lo siento, tu correo no está en la lista blanca. No puedes acceder al bot."
-            )
-            return
+    await update.message.reply_text(
+        "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente."
+    )
+
+    if not await self.is_user_whitelisted(update.message.chat.id):
+        await update.message.reply_text(
+            "Lo siento, tu correo no está en la lista blanca. No puedes acceder al bot."
+        )
+        return
 
         await update.message.reply_text(
             "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente."
