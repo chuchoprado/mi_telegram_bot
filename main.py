@@ -46,10 +46,19 @@ class CoachBot:
             await self.app.start()
 
     def _setup_handlers(self):
-        """Configura los manejadores de Telegram"""
-        self.app.add_handler(CommandHandler("start", self.start_command))
-        self.app.add_handler(CommandHandler("help", self.help_command))
-        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.verify_email))
+    """Configura los manejadores de Telegram"""
+    self.app.add_handler(CommandHandler("start", self.start_command))
+    self.app.add_handler(CommandHandler("help", self.help_command))
+    self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.route_message))
+
+    async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Redirige mensajes según si el usuario ya fue verificado o no"""
+    chat_id = update.message.chat.id
+
+    if chat_id in self.verified_users:
+        await self.handle_message(update, context)  # Usuario validado → Chatear
+    else:
+        await self.verify_email(update, context)  # Usuario no validado → Verificar email
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
@@ -92,19 +101,24 @@ class CoachBot:
         return False
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Verifica el correo electrónico proporcionado por el usuario"""
-        user_email = update.message.text.strip()
-        chat_id = update.message.chat.id
-        username = update.message.from_user.username or "Desconocido"
+    """Verifica el correo electrónico proporcionado por el usuario"""
+    user_email = update.message.text.strip()
+    chat_id = update.message.chat.id
+    username = update.message.from_user.username or "Desconocido"
 
-        if not await self.is_user_whitelisted(user_email):
-            await update.message.reply_text(
-                "❌ Lo siento, tu correo no está en nuestra Base de Datos."
-            )
-            return
+    if chat_id in self.verified_users:
+        await update.message.reply_text("✅ Ya estás validado. Puedes escribir libremente.")
+        return
 
-        await self.update_telegram_user(chat_id, user_email, username)
-        await update.message.reply_text("✅ ¡Gracias! Tu correo ha sido verificado.")
+    if not await self.is_user_whitelisted(user_email):
+        await update.message.reply_text(
+            "❌ Tu correo no está en la lista blanca. Contacta a soporte."
+        )
+        return
+
+    self.verified_users[chat_id] = user_email  # 🔥 Guardar usuario validado
+    await self.update_telegram_user(chat_id, user_email, username)
+    await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
 
     async def update_telegram_user(self, chat_id, email, username):
         """Actualiza el usuario de Telegram en la hoja de cálculo"""
