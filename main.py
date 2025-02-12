@@ -30,7 +30,8 @@ class CoachBot:
         self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.sheets_service = None
         self.assistant = None
-        
+        self.started = False  # Añadir bandera
+
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         self._setup_handlers()
@@ -42,7 +43,18 @@ class CoachBot:
     async def async_init(self):
         """Inicialización asíncrona"""
         await self.app.initialize()
-        await self.app.start()  # 🔥 Ahora sí arranca el bot
+        if not self.started:  # Verificar si ya ha sido iniciado
+            self.started = True
+            await self.app.start()  # 🔥 Ahora sí arranca el bot
+
+    # Resto del código permanece igual...
+
+# Crear instancia del bot
+bot = CoachBot()
+
+@app.on_event("startup")
+async def startup_event():
+    await bot.async_init()
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
