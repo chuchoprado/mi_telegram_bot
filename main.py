@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levellevelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ class CoachBot:
                 scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
             )
             self.sheets_service = build('sheets', 'v4', credentials=credentials)
+            logger.info("Conexión con Google Sheets inicializada correctamente.")
         except Exception as e:
             logger.error(f"Error inicializando Google Sheets: {e}")
 
@@ -211,6 +212,20 @@ class CoachBot:
                 "Lo siento, ocurrió un error. Por favor intenta más tarde."
             )
 
+    async def test_google_sheets_connection(self):
+        """Prueba la conexión con Google Sheets"""
+        try:
+            test_range = 'A1:A1'  # Rango de prueba
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.SPREADSHEET_ID,
+                range=test_range
+            ).execute()
+            logger.info("Google Sheets API está funcionando correctamente.")
+            return result.get('values', [])
+        except Exception as e:
+            logger.error(f"Error probando la conexión con Google Sheets: {e}")
+            return []
+
 # Crear instancia del bot
 bot = CoachBot()
 
@@ -247,3 +262,12 @@ async def health_check():
 async def health_check():
     """Endpoint de verificación de estado"""
     return {"status": "alive"}
+
+@app.get("/test_google_sheets")
+async def test_google_sheets():
+    """Endpoint para probar la conexión con Google Sheets"""
+    result = await bot.test_google_sheets_connection()
+    if result:
+        return {"status": "Google Sheets API está funcionando correctamente", "data": result}
+    else:
+        return {"status": "Error probando la conexión con Google Sheets"}
