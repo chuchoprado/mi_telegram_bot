@@ -1,3 +1,4 @@
+# main.py
 import os
 import asyncio
 import io
@@ -12,7 +13,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levellevelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Corrige el typo
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
