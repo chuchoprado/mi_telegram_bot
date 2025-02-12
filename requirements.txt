@@ -34,7 +34,7 @@ jiter==0.8.2
 MarkupSafe==3.0.2
 multidict==6.1.0
 oauthlib==3.2.2
-openai>=1.0.0
+openai==1.0.0
 packaging==24.2
 pillow==11.1.0
 propcache==0.2.1
