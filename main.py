@@ -47,18 +47,15 @@ class CoachBot:
             self.started = True
             await self.app.start()  # 🔥 Ahora sí arranca el bot
 
-    # Resto del código permanece igual...
-
-# Crear instancia del bot
-bot = CoachBot()
-
-@app.on_event("startup")
-async def startup_event():
-    await bot.async_init()
-
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
+
+        if not await self.is_user_whitelisted(update.message.chat.id):
+            await update.message.reply_text(
+                "Lo siento, tu correo no está en la lista blanca. No puedes acceder al bot."
+            )
+            return
 
         await update.message.reply_text(
             "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
@@ -82,19 +79,32 @@ async def startup_event():
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
 
-    async def get_sheet_data(self):
+    async def get_sheet_data(self, range):
         """Obtiene datos de Google Sheets"""
         if not self.sheets_service:
             return []
         try:
             result = self.sheets_service.spreadsheets().values().get(
                 spreadsheetId=self.SPREADSHEET_ID,
-                range='A1:Z1000'
+                range=range
             ).execute()
             return result.get('values', [])
         except Exception as e:
             logger.error(f"Error obteniendo datos de sheets: {e}")
             return []
+
+    async def is_user_whitelisted(self, chat_id):
+        """Verifica si el usuario está en la lista blanca"""
+        email_range = 'whitelist!A:A'
+        emails = await self.get_sheet_data(email_range)
+        user_email = await self.get_user_email(chat_id)
+        return any(user_email in sublist for sublist in emails)
+
+    async def get_user_email(self, chat_id):
+        """Obtiene el correo electrónico del usuario a partir del chat_id"""
+        # Implementa la lógica para obtener el correo electrónico del usuario a partir del chat_id
+        # Esto puede depender de cómo se almacene y gestione la información del usuario
+        return "user@example.com"  # Placeholder
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /help"""
@@ -116,7 +126,7 @@ async def startup_event():
             # Inicializar asistente si no existe
             if not self.assistant:
                 # Obtener datos de sheets
-                data = await self.get_sheet_data()
+                data = await self.get_sheet_data('A1:Z1000')
                 
                 # Crear archivo para el asistente con un objeto IO compatible con OpenAI
                 data_str = json.dumps({"data": data})
