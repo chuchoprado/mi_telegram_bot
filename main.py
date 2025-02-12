@@ -51,10 +51,6 @@ class CoachBot:
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
 
-        await update.message.reply_text(
-            "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente."
-        )
-
         if not await self.is_user_whitelisted(update.message.chat.id):
             await update.message.reply_text(
                 "Lo siento, tu correo no está en la lista blanca. No puedes acceder al bot."
@@ -62,7 +58,7 @@ class CoachBot:
             return
 
         await update.message.reply_text(
-            "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
+            "¡Hola! Bienvenido al Coach Meditahub, por favor proporciona tu email para acceder a tu asistente."
         )
 
     def _init_sheets(self):
