@@ -159,32 +159,32 @@ class CoachBot:
         )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los mensajes recibidos"""
-        try:
-            # Mensaje de procesamiento
-            processing_msg = await update.message.reply_text(
-                "Procesando tu solicitud..."
-            )
+    """Maneja los mensajes recibidos"""
+    try:
+        # Mensaje de procesamiento
+        processing_msg = await update.message.reply_text(
+            "Procesando tu solicitud..."
+        )
 
-            # Generar una respuesta usando OpenAI
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": update.message.text}
-                ]
-            )
+        # Generar una respuesta usando OpenAI
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": update.message.text}
+            ]
+        )
 
-            await processing_msg.delete()
-            
-            # Enviar respuesta
-            await update.message.reply_text(response.choices[0].message.content.strip())
+        await processing_msg.delete()
+        
+        # Enviar respuesta
+        await update.message.reply_text(response.choices[0].message['content'].strip())
 
-        except Exception as e:
-            logger.error(f"Error en handle_message: {e}")
-            await update.message.reply_text(
-                "Lo siento, ocurrió un error. Por favor intenta más tarde."
-            )
+    except Exception as e:
+        logger.error(f"Error en handle_message: {e}")
+        await update.message.reply_text(
+            "Lo siento, ocurrió un error. Por favor intenta más tarde."
+        )
 
     async def test_google_sheets_connection(self):
         """Prueba la conexión con Google Sheets"""
