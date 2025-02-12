@@ -60,6 +60,7 @@ class CoachBot:
         """Verifica el correo electrónico proporcionado por el usuario"""
         user_email = update.message.text
         chat_id = update.message.chat.id
+        username = update.message.from_user.username  # Obtener el username de Telegram
 
         if not await self.is_user_whitelisted(user_email):
             await update.message.reply_text(
@@ -67,10 +68,13 @@ class CoachBot:
             )
             return
 
-        await self.update_telegram_user(chat_id, user_email)
+        await self.update_telegram_user(chat_id, user_email, username)
         await update.message.reply_text(
             "¡Gracias! Tu correo ha sido verificado y ahora puedes usar las funcionalidades del Coach e iniciar tu reto de 21 días."
         )
+
+        # Continuar con el asistente de OpenAI
+        await self.handle_message(update, context)
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
@@ -116,11 +120,11 @@ class CoachBot:
         logger.info(f"El correo {user_email} NO está en la lista blanca.")
         return False
 
-    async def update_telegram_user(self, chat_id, email):
+    async def update_telegram_user(self, chat_id, email, username):
         """Actualiza el usuario de Telegram en la hoja de cálculo"""
         try:
             body = {
-                "values": [[chat_id]]
+                "values": [[chat_id, username]]
             }
             # Busca el índice del email en la hoja de cálculo
             email_range = 'C2:C2000'
@@ -135,7 +139,7 @@ class CoachBot:
                 logger.error(f"No se encontró el email {email} en la lista blanca.")
                 return
 
-            range = f'whitelist!F{email_index}'  # Actualiza la celda correspondiente al email
+            range = f'whitelist!F{email_index}:G{email_index}'  # Actualiza las celdas correspondientes al email
             self.sheets_service.spreadsheets().values().update(
                 spreadsheetId=self.SPREADSHEET_ID,
                 range=range,
@@ -271,4 +275,3 @@ async def test_google_sheets():
         return {"status": "Google Sheets API está funcionando correctamente", "data": result}
     else:
         return {"status": "Error probando la conexión con Google Sheets"}
-        
