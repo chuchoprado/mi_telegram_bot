@@ -38,9 +38,6 @@ class CoachBot:
         self._setup_handlers()
         self._init_sheets()
 
-        # Inicialización asíncrona sin bloquear el event loop
-        asyncio.create_task(self.async_init())
-
     async def async_init(self):
         """Inicialización asíncrona"""
         await self.app.initialize()
@@ -57,25 +54,22 @@ class CoachBot:
         )
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verifica el correo electrónico proporcionado por el usuario"""
-    user_email = update.message.text.strip()
-    chat_id = update.message.chat.id
-    username = update.message.from_user.username or "Desconocido"  # Manejo de usuario sin username
+        """Verifica el correo electrónico proporcionado por el usuario"""
+        user_email = update.message.text.strip()
+        chat_id = update.message.chat.id
+        username = update.message.from_user.username or "Desconocido"  # Manejo de usuario sin username
 
-    if not await self.is_user_whitelisted(user_email):
+        if not await self.is_user_whitelisted(user_email):
+            await update.message.reply_text(
+                "❌ Lo siento, tu correo no está en nuestra Base de Datos. No puedes acceder al bot. Si deseas, contacta con nuestro equipo en www.meditahub.com."
+            )
+            return
+
+        await self.update_telegram_user(chat_id, user_email, username)
         await update.message.reply_text(
-            "❌ Lo siento, tu correo no está en nuestra Base de Datos. No puedes acceder al bot. Si deseas, contacta con nuestro equipo en www.meditahub.com."
+            "✅ ¡Gracias! Tu correo ha sido verificado y ahora puedes usar las funcionalidades del Coach e iniciar tu reto de 21 días.\n"
+            "Escríbeme cualquier pregunta para comenzar 😊"
         )
-        return
-
-    await self.update_telegram_user(chat_id, user_email, username)
-    await update.message.reply_text(
-        "✅ ¡Gracias! Tu correo ha sido verificado y ahora puedes usar las funcionalidades del Coach e iniciar tu reto de 21 días.\n"
-        "Escríbeme cualquier pregunta para comenzar 😊"
-    )
-
-        # Continuar con el asistente de OpenAI
-        await self.handle_message(update, context)
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
@@ -95,60 +89,37 @@ class CoachBot:
         self.app.add_handler(CommandHandler("help", self.help_command))
         self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.verify_email))
 
-    async def get_sheet_data(self, range):
-        """Obtiene datos de Google Sheets"""
-        if not self.sheets_service:
-            return []
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja los mensajes recibidos"""
         try:
-            result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range=range
-            ).execute()
-            return result.get('values', [])
-        except Exception as e:
-            logger.error(f"Error obteniendo datos de sheets: {e}")
-            return []
-
-    async def is_user_whitelisted(self, user_email):
-        """Verifica si el usuario está en la lista blanca"""
-        email_range = 'C2:C2000'  # Cambiar el rango para buscar en toda la hoja
-        emails = await self.get_sheet_data(email_range)
-        logger.info(f"Emails obtenidos de Google Sheets: {emails}")
-        for sublist in emails:
-            if user_email in sublist:
-                logger.info(f"El correo {user_email} está en la lista blanca.")
-                return True
-        logger.info(f"El correo {user_email} NO está en la lista blanca.")
-        return False
-
-    async def update_telegram_user(self, chat_id, email, username):
-        """Actualiza el usuario de Telegram en la hoja de cálculo"""
-        try:
-            body = {
-                "values": [[chat_id, username]]
-            }
-            # Busca el índice del email en la hoja de cálculo
-            email_range = 'C2:C2000'
-            emails = await self.get_sheet_data(email_range)
-            email_index = None
-            for index, sublist in enumerate(emails):
-                if email in sublist:
-                    email_index = index + 2  # +2 porque Google Sheets es 1-based y hay un header
-                    break
-
-            if email_index is None:
-                logger.error(f"No se encontró el email {email} en la lista blanca.")
+            user_message = update.message.text.strip()
+            
+            if not user_message:
                 return
 
-            range = f'whitelist!F{email_index}:G{email_index}'  # Actualiza las celdas correspondientes al email
-            self.sheets_service.spreadsheets().values().update(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range=range,
-                valueInputOption='RAW',
-                body=body
-            ).execute()
+            processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud, un momento...")
+
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": user_message}],
+                max_tokens=150
+            )
+
+            await processing_msg.delete()
+
+            if response and "choices" in response and response["choices"]:
+                reply_text = response["choices"][0]["message"]["content"].strip()
+                await update.message.reply_text(reply_text)
+            else:
+                await update.message.reply_text("😕 Lo siento, no pude generar una respuesta en este momento.")
+
+        except openai.error.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema al obtener una respuesta. Inténtalo de nuevo más tarde.")
+
         except Exception as e:
-            logger.error(f"Error actualizando usuario de Telegram: {e}")
+            logger.error(f"❌ Error en handle_message: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /help"""
@@ -159,46 +130,10 @@ class CoachBot:
             "- Recursos disponibles"
         )
 
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja los mensajes recibidos de los usuarios."""
-    try:
-        user_message = update.message.text.strip()
-        
-        # Evitar respuestas a mensajes vacíos
-        if not user_message:
-            return
-        
-        # Mensaje de procesamiento para dar feedback al usuario
-        processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud, un momento...")
-
-        # Generar una respuesta usando OpenAI
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": user_message}],
-            max_tokens=150
-        )
-
-        await processing_msg.delete()
-
-        # Enviar respuesta si existe
-        if response and "choices" in response and response["choices"]:
-            reply_text = response["choices"][0]["message"]["content"].strip()
-            await update.message.reply_text(reply_text)
-        else:
-            await update.message.reply_text("😕 Lo siento, no pude generar una respuesta en este momento.")
-
-    except openai.error.OpenAIError as e:
-        logger.error(f"❌ Error en OpenAI: {e}")
-        await update.message.reply_text("❌ Hubo un problema al obtener una respuesta. Inténtalo de nuevo más tarde.")
-
-    except Exception as e:
-        logger.error(f"❌ Error en handle_message: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
-
     async def test_google_sheets_connection(self):
         """Prueba la conexión con Google Sheets"""
         try:
-            test_range = 'A1:A1'  # Rango de prueba
+            test_range = 'A1:A1'
             result = self.sheets_service.spreadsheets().values().get(
                 spreadsheetId=self.SPREADSHEET_ID,
                 range=test_range
@@ -221,15 +156,14 @@ async def webhook(request: Request):
     """Endpoint para el webhook de Telegram"""
     try:
         data = await request.json()
-        logger.info(f"📩 Webhook recibido: {json.dumps(data, indent=2)}")  # 🔥 Muestra todo el JSON recibido
+        logger.info(f"📩 Webhook recibido: {json.dumps(data, indent=2)}")
 
-        # Validar si el update tiene un campo 'date' antes de procesarlo
         if "message" in data and "date" not in data["message"]:
             logger.error("❌ Error: 'date' no encontrado en el mensaje recibido.")
             return {"status": "error", "message": "'date' no encontrado en el mensaje"}
 
         update = Update.de_json(data, bot.app.bot)
-        await bot.app.update_queue.put(update)  # 🔥 Ahora los mensajes se procesan correctamente
+        await bot.app.update_queue.put(update)
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"❌ Error en webhook: {e}")
@@ -237,13 +171,6 @@ async def webhook(request: Request):
 
 @app.get("/")
 async def health_check():
-    """Endpoint de verificación"""
-    return {"status": "alive"}
-
-@app.get("/", include_in_schema=False)
-@app.head("/", include_in_schema=False)
-async def health_check():
-    """Endpoint de verificación de estado"""
     return {"status": "alive"}
 
 @app.get("/test_google_sheets")
