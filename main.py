@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Corrige el typo
+    format='%(asctime)s - %(name)s - %(levellevelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ class CoachBot:
     def __init__(self):
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
         self.SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
+        self.assistant_id = os.getenv('ASSISTANT_ID')
         self.openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.sheets_service = None
-        self.assistant = None
         self.started = False  # Añadir bandera
 
         # Inicializar la aplicación de Telegram
@@ -60,12 +60,13 @@ class CoachBot:
         user_email = update.message.text
         chat_id = update.message.chat.id
 
-        if not await self.is_user_whitelisted(chat_id, user_email):
+        if not await self.is_user_whitelisted(user_email):
             await update.message.reply_text(
                 "Lo siento, tu correo no está en la lista blanca. No puedes acceder al bot."
             )
             return
 
+        await self.update_telegram_user(chat_id, user_email)
         await update.message.reply_text(
             "¡Gracias! Tu correo ha sido verificado y ahora puedes usar el bot."
         )
@@ -103,20 +104,11 @@ class CoachBot:
             logger.error(f"Error obteniendo datos de sheets: {e}")
             return []
 
-    async def is_user_whitelisted(self, chat_id, user_email):
+    async def is_user_whitelisted(self, user_email):
         """Verifica si el usuario está en la lista blanca"""
         email_range = 'A:Z'  # Cambiar el rango para buscar en toda la hoja
         emails = await self.get_sheet_data(email_range)
-        if any(user_email in sublist for sublist in emails):
-            await self.update_telegram_user(chat_id, user_email)
-            return True
-        return False
-
-    async def get_user_email(self, chat_id):
-        """Obtiene el correo electrónico del usuario a partir del chat_id"""
-        # Implementa la lógica para obtener el correo electrónico del usuario a partir del chat_id
-        # Esto puede depender de cómo se almacene y gestione la información del usuario
-        return "user@example.com"  # Placeholder
+        return any(user_email in sublist for sublist in emails)
 
     async def update_telegram_user(self, chat_id, email):
         """Actualiza el usuario de Telegram en la hoja de cálculo"""
@@ -151,25 +143,6 @@ class CoachBot:
                 "Procesando tu solicitud..."
             )
 
-            # Inicializar asistente si no existe
-            if not self.assistant:
-                # Obtener datos de sheets
-                data = await self.get_sheet_data('A:Z')
-                
-                # Crear archivo para el asistente con un objeto IO compatible con OpenAI
-                data_str = json.dumps({"data": data})
-                file = self.openai_client.files.create(
-                    file=("data.json", io.BytesIO(data_str.encode('utf-8'))),  # Cambiar a io.BytesIO
-                    purpose='assistants'
-                )
-                
-                # Crear asistente
-                self.assistant = self.openai_client.assistants.create(
-                    name="Coach Assistant",
-                    instructions="Asistente para recomendaciones basadas en la base de datos.",
-                    model="gpt-4-turbo-preview"
-                )
-
             # Crear thread
             thread = self.openai_client.threads.create()
             
@@ -183,7 +156,7 @@ class CoachBot:
             # Ejecutar el asistente
             run = self.openai_client.threads.runs.create(
                 thread_id=thread.id,
-                assistant_id=self.assistant.id
+                assistant_id=self.assistant_id
             )
             
             # Esperar respuesta
