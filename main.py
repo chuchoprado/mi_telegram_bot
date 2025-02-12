@@ -40,20 +40,17 @@ class CoachBot:
         asyncio.create_task(self.async_init())
 
     async def async_init(self):
-    """Inicialización asíncrona"""
-    await self.app.initialize()
-    await self.app.start()  # 🔥 Ahora sí arranca el bot
+        """Inicialización asíncrona"""
+        await self.app.initialize()
+        await self.app.start()  # 🔥 Ahora sí arranca el bot
 
-# Ejecutar async_init() en el event loop
-asyncio.get_event_loop().run_until_complete(self.async_init())  # 🔥 Ahora el bot se inicializa correctamente
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja el comando /start"""
+        logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
 
-   async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /start"""
-    logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
-
-    await update.message.reply_text(
-        "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
-    )
+        await update.message.reply_text(
+            "¡Hola! Soy El Coach Bot. ¿En qué puedo ayudarte hoy?"
+        )
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
@@ -178,6 +175,9 @@ asyncio.get_event_loop().run_until_complete(self.async_init())  # 🔥 Ahora el 
 # Crear instancia del bot
 bot = CoachBot()
 
+# Ejecutar async_init() en el event loop
+asyncio.get_event_loop().run_until_complete(bot.async_init())  # 🔥 Ahora el bot se inicializa correctamente
+
 @app.post("/webhook")
 async def webhook(request: Request):
     """Endpoint para el webhook de Telegram"""
@@ -207,4 +207,3 @@ async def health_check():
 async def health_check():
     """Endpoint de verificación de estado"""
     return {"status": "alive"}
-
