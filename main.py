@@ -6,7 +6,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import openai  # Importa la biblioteca de OpenAI
+import openai  
 import json
 import logging
 
@@ -133,6 +133,11 @@ class CoachBot:
             ).execute()
         except Exception as e:
             logger.error(f"Error actualizando usuario: {e}")
+
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja el comando /start"""
+        logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
+        await update.message.reply_text("¡Hola! Proporciona tu email para iniciar.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes recibidos"""
