@@ -181,8 +181,6 @@ class CoachBot:
             }]
         except Exception as e:
             logger.error(f"Error creating OpenAI thread: {e}")
-        except Exception as e:
-            logger.error(f"Error creating OpenAI thread: {e}")
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
