@@ -166,7 +166,7 @@ class CoachBot:
             "👉 Escribe un mensaje y te responderé."
         )
 
-async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes recibidos después de la verificación"""
         try:
             chat_id = update.message.chat.id
@@ -203,7 +203,7 @@ async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception as e:
             logger.error(f"❌ Error en handle_message: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
-        
+
 # Crear instancia del bot
 bot = CoachBot()
 
