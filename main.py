@@ -24,6 +24,11 @@ app = FastAPI()
 # Variable global para almacenar logs
 logs = []
 
+# Define or import your client here
+import openai
+
+client = openai
+
 class CoachBot:
     def __init__(self):
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
