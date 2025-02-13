@@ -10,6 +10,7 @@ from googleapiclient.discovery import build
 import openai  
 import json
 import logging
+from tenacity import retry, stop_after_attempt, wait_fixed  # Add tenacity for retries
 
 # Configurar logging
 logging.basicConfig(
@@ -166,6 +167,7 @@ class CoachBot:
         await self.create_openai_thread(chat_id)
         await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
 
+    @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
     async def create_openai_thread(self, chat_id):
         """Create a new thread for the user in OpenAI"""
         if chat_id not in self.user_threads:
@@ -181,6 +183,7 @@ class CoachBot:
                 }]
             except Exception as e:
                 logger.error(f"Error creating OpenAI thread: {e}")
+                raise
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
