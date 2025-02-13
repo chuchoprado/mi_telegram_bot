@@ -154,51 +154,47 @@ class CoachBot:
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
         await update.message.reply_text("¡Hola! Proporciona tu email para iniciar.")
 
-async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /help"""
-    await update.message.reply_text(
-        "📌 Puedes preguntarme sobre:\n"
-        "- Recomendaciones de productos\n"
-        "- Videos de ejercicios\n"
-        "- Recursos disponibles\n"
-        "- Instrucciones sobre el bot\n\n"
-        "👉 Escribe un mensaje y te responderé."
-    )
-
-async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja los mensajes recibidos después de la verificación"""
-    try:
-        user_message = update.message.text.strip()
-        if not user_message:
-            return
-
-        processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud...")
-
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": user_message}],
-            max_tokens=150
-        )
-
-        await processing_msg.delete()
-
-        if response and "choices" in response and response["choices"]:
-            reply_text = response["choices"][0]["message"]["content"].strip()
-            await update.message.reply_text(reply_text)
-        else:
-            await update.message.reply_text("😕 No pude generar una respuesta en este momento.")
-
-    except openai.error.OpenAIError as e:
-        logger.error(f"❌ Error en OpenAI: {e}")
-        await update.message.reply_text("❌ Hubo un problema con OpenAI.")
-
-    except Exception as e:
-        logger.error(f"❌ Error en handle_message: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
-
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /help"""
-        await update.message.reply_text("Puedes preguntarme sobre ejercicios y recursos.")
+        await update.message.reply_text(
+            "📌 Puedes preguntarme sobre:\n"
+            "- Recomendaciones de productos\n"
+            "- Videos de ejercicios\n"
+            "- Recursos disponibles\n"
+            "- Instrucciones sobre el bot\n\n"
+            "👉 Escribe un mensaje y te responderé."
+        )
+
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja los mensajes recibidos después de la verificación"""
+        try:
+            user_message = update.message.text.strip()
+            if not user_message:
+                return
+
+            processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud...")
+
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": user_message}],
+                max_tokens=150
+            )
+
+            await processing_msg.delete()
+
+            if response and "choices" in response and response["choices"]:
+                reply_text = response["choices"][0]["message"]["content"].strip()
+                await update.message.reply_text(reply_text)
+            else:
+                await update.message.reply_text("😕 No pude generar una respuesta en este momento.")
+
+        except openai.error.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+
+        except Exception as e:
+            logger.error(f"❌ Error en handle_message: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
 # Crear instancia del bot
 bot = CoachBot()
