@@ -123,6 +123,9 @@ class CoachBot:
         self.verified_users[chat_id] = user_email
         await self.update_telegram_user(chat_id, user_email, username)
         await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+        
+        # Send a welcome message and invite the user to interact with El Coach
+        await self.send_welcome_message(chat_id, username)
 
     async def update_telegram_user(self, chat_id, email, username):
         """Actualiza el usuario de Telegram en la hoja de cálculo"""
@@ -151,6 +154,33 @@ class CoachBot:
             ).execute()
         except Exception as e:
             logger.error(f"Error actualizando usuario: {e}")
+
+    async def send_welcome_message(self, chat_id, username):
+        """Send a welcome message after email verification"""
+        welcome_message = (
+            f"¡Hola {username}! 🎉\n\n"
+            "¡Bienvenido(a) a El Coach! Estoy aquí para ayudarte con recomendaciones de productos, "
+            "videos de ejercicios y otros recursos.\n\n"
+            "Escríbeme cualquier pregunta y estaré encantado de asistirte. 💪"
+        )
+        await self.create_openai_thread(chat_id)
+        await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
+
+    async def create_openai_thread(self, chat_id):
+        """Create a new thread for the user in OpenAI"""
+        if chat_id not in self.user_threads:
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "system", "content": "New conversation"}]
+                )
+                self.user_threads[chat_id] = response['id']
+                self.conversation_history[chat_id] = [{
+                    "role": "system",
+                    "content": "You are now chatting with El Coach, your personal assistant."
+                }]
+            except Exception as e:
+                logger.error(f"Error creating OpenAI thread: {e}")
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
