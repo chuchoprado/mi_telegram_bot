@@ -34,6 +34,7 @@ class CoachBot:
         self.started = False
         self.verified_users = {}  # Diccionario para almacenar usuarios verificados
         self.conversation_history = {}  # Dictionary to store conversation history
+        self.user_threads = {}  # Dictionary to store user threads
 
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
@@ -166,6 +167,37 @@ class CoachBot:
             "👉 Escribe un mensaje y te responderé."
         )
 
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        chat_id = update.effective_chat.id
+        logger.info(f"Mensaje recibido del usuario: {user_message}")
+        
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+            # Crear o recuperar el thread para este usuario
+            if chat_id not in self.user_threads:
+                thread = client.beta.threads.create()
+                self.user_threads[chat_id] = thread.id
+            
+            thread_id = self.user_threads[chat_id]
+
+            # Añadir el mensaje del usuario al thread
+            message = client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_message
+            )
+
+            # Crear la ejecución (run)
+            run = client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
+
+        except Exception as e:
+            logger.error(f"Error procesando el mensaje: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error procesando tu mensaje. Inténtalo más tarde.")
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes recibidos después de la verificación"""
         try:
@@ -174,27 +206,7 @@ class CoachBot:
             if not user_message:
                 return
 
-            if chat_id not in self.conversation_history:
-                self.conversation_history[chat_id] = []
-
-            self.conversation_history[chat_id].append({"role": "user", "content": user_message})
-
-            processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud...")
-
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=self.conversation_history[chat_id],
-                max_tokens=150
-            )
-
-            await processing_msg.delete()
-
-            if response and response.choices:
-                reply_text = response.choices[0].message["content"].strip()
-                self.conversation_history[chat_id].append({"role": "assistant", "content": reply_text})
-                await update.message.reply_text(reply_text)
-            else:
-                await update.message.reply_text("😕 No pude generar una respuesta en este momento.")
+            await self.process_text_message(update, context, user_message)
 
         except openai.OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
