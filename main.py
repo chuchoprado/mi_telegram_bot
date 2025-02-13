@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -89,7 +89,8 @@ class CoachBot:
 
     async def is_user_whitelisted(self, user_email):
         """Verifica si el usuario está en la lista blanca en Google Sheets"""
-        email_range = 'C2:C2000'
+        query = f"SELECT * WHERE C = '{user_email}'"
+        email_range = f"'{query}'!C2:C2000"
         emails = await self.get_sheet_data(email_range)
         logger.info(f"📄 Emails obtenidos de Google Sheets: {emails}")
 
@@ -174,16 +175,16 @@ class CoachBot:
 
             processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud...")
 
-            response = openai.Completion.create(
-                model="text-davinci-003",
-                prompt=user_message,
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": user_message}],
                 max_tokens=150
             )
 
             await processing_msg.delete()
 
             if response and response.choices:
-                reply_text = response.choices[0].text.strip()
+                reply_text = response.choices[0].message.content.strip()
                 await update.message.reply_text(reply_text)
             else:
                 await update.message.reply_text("😕 No pude generar una respuesta en este momento.")
