@@ -167,18 +167,20 @@ class CoachBot:
         await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
 
     async def create_openai_thread(self, chat_id):
-        """Create a new thread for the user in OpenAI"""
-        if chat_id not in self.user_threads:
-            try:
-                response = openai.ChatCompletion.create(
-                    model="gpt-3.5-turbo",
-                    messages=[{"role": "system", "content": "New conversation"}]
-                )
-                self.user_threads[chat_id] = response['choices'][0]['id']  # Corrected to access 'choices'
-                self.conversation_history[chat_id] = [{
-                    "role": "system",
-                    "content": "You are now chatting with El Coach, your personal assistant."
-                }]
+    """Create a new thread for the user in OpenAI"""
+    if chat_id not in self.user_threads:
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "New conversation"}]
+            )
+            self.user_threads[chat_id] = response['id']  # Ensure correct access to the ID
+            self.conversation_history[chat_id] = [{
+                "role": "system",
+                "content": "You are now chatting with El Coach, your personal assistant."
+            }]
+        except Exception as e:
+            logger.error(f"Error creating OpenAI thread: {e}")
             except Exception as e:
                 logger.error(f"Error creating OpenAI thread: {e}")
 
