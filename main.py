@@ -174,7 +174,7 @@ class CoachBot:
                     model="gpt-3.5-turbo",
                     messages=[{"role": "system", "content": "New conversation"}]
                 )
-                self.user_threads[chat_id] = response['id']
+                self.user_threads[chat_id] = response['choices'][0]['id']  # Corrected to access 'choices'
                 self.conversation_history[chat_id] = [{
                     "role": "system",
                     "content": "You are now chatting with El Coach, your personal assistant."
@@ -205,9 +205,9 @@ class CoachBot:
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-            # Create or get the conversation history for this user
-            if chat_id not in self.conversation_history:
-                self.conversation_history[chat_id] = []
+            # Ensure the thread exists
+            if chat_id not in self.user_threads:
+                await self.create_openai_thread(chat_id)
 
             # Add user message to the conversation history
             self.conversation_history[chat_id].append({"role": "user", "content": user_message})
