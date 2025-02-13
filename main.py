@@ -165,39 +165,39 @@ class CoachBot:
             "👉 Escribe un mensaje y te responderé."
         )
 
-  async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja los mensajes recibidos después de la verificación"""
-    try:
-        user_message = update.message.text.strip()
-        if not user_message:
-            return
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja los mensajes recibidos después de la verificación"""
+        try:
+            user_message = update.message.text.strip()
+            if not user_message:
+                return
 
-        processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud...")
+            processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud...")
 
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": ""}
-            ],
-            max_tokens=150
-        )
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "user", "content": user_message},
+                    {"role": "assistant", "content": ""}
+                ],
+                max_tokens=150
+            )
 
-        await processing_msg.delete()
+            await processing_msg.delete()
 
-        if response and response.choices:
-            reply_text = response.choices[0].message.content.strip()
-            await update.message.reply_text(reply_text)
-        else:
-            await update.message.reply_text("😕 No pude generar una respuesta en este momento.")
+            if response and response.choices:
+                reply_text = response.choices[0].message.content.strip()
+                await update.message.reply_text(reply_text)
+            else:
+                await update.message.reply_text("😕 No pude generar una respuesta en este momento.")
 
-    except openai.OpenAIError as e:
-        logger.error(f"❌ Error en OpenAI: {e}")
-        await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+        except openai.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
-    except Exception as e:
-        logger.error(f"❌ Error en handle_message: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
+        except Exception as e:
+            logger.error(f"❌ Error en handle_message: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
         
 # Crear instancia del bot
 bot = CoachBot()
