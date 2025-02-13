@@ -3,7 +3,7 @@ import asyncio
 import io
 from fastapi import FastAPI, Request
 from telegram import Update
-from telegram.constants import ChatAction  # Import ChatAction from telegram.constants
+from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -23,11 +23,6 @@ app = FastAPI()
 
 # Variable global para almacenar logs
 logs = []
-
-# Define or import your client here
-import openai
-
-client = openai
 
 class CoachBot:
     def __init__(self):
@@ -180,25 +175,25 @@ class CoachBot:
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-            # Crear o recuperar el thread para este usuario
-            if chat_id not in self.user_threads:
-                thread = client.beta.threads.create()
-                self.user_threads[chat_id] = thread.id
-            
-            thread_id = self.user_threads[chat_id]
+            # Create or get the conversation history for this user
+            if chat_id not in self.conversation_history:
+                self.conversation_history[chat_id] = []
 
-            # Añadir el mensaje del usuario al thread
-            message = client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_message
+            # Add user message to the conversation history
+            self.conversation_history[chat_id].append({"role": "user", "content": user_message})
+
+            # Generate a response from OpenAI
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=self.conversation_history[chat_id]
             )
 
-            # Crear la ejecución (run)
-            run = client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+            # Add assistant response to the conversation history
+            assistant_message = response['choices'][0]['message']['content']
+            self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+
+            # Send the assistant's response to the user
+            await update.message.reply_text(assistant_message)
 
         except Exception as e:
             logger.error(f"Error procesando el mensaje: {e}")
