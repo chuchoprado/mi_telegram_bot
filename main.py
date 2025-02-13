@@ -2,7 +2,7 @@ import os
 import asyncio
 import io
 from fastapi import FastAPI, Request
-from telegram import Update
+from telegram import Update, ChatAction  # Import ChatAction here
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
