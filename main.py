@@ -12,7 +12,7 @@ import logging
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -89,8 +89,7 @@ class CoachBot:
 
     async def is_user_whitelisted(self, user_email):
         """Verifica si el usuario está en la lista blanca en Google Sheets"""
-        query = f"SELECT * WHERE C = '{user_email}'"
-        email_range = f"'{query}'!C2:C2000"
+        email_range = 'C2:C2000'
         emails = await self.get_sheet_data(email_range)
         logger.info(f"📄 Emails obtenidos de Google Sheets: {emails}")
 
