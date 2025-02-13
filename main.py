@@ -32,10 +32,11 @@ class CoachBot:
         openai.api_key = os.getenv('OPENAI_API_KEY')
         self.sheets_service = None
         self.started = False
+        self.verified_users = {}  # Diccionario para almacenar usuarios verificados
 
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-        self._setup_handlers()  # 🔥 Se corrige para que sí exista
+        self._setup_handlers()
         self._init_sheets()
 
     async def async_init(self):
@@ -46,19 +47,19 @@ class CoachBot:
             await self.app.start()
 
     def _setup_handlers(self):
-    """Configura los manejadores de Telegram"""
-    self.app.add_handler(CommandHandler("start", self.start_command))
-    self.app.add_handler(CommandHandler("help", self.help_command))
-    self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.route_message))
+        """Configura los manejadores de Telegram"""
+        self.app.add_handler(CommandHandler("start", self.start_command))
+        self.app.add_handler(CommandHandler("help", self.help_command))
+        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.route_message))
 
     async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Redirige mensajes según si el usuario ya fue verificado o no"""
-    chat_id = update.message.chat.id
+        """Redirige mensajes según si el usuario ya fue verificado o no"""
+        chat_id = update.message.chat.id
 
-    if chat_id in self.verified_users:
-        await self.handle_message(update, context)  # Usuario validado → Chatear
-    else:
-        await self.verify_email(update, context)  # Usuario no validado → Verificar email
+        if chat_id in self.verified_users:
+            await self.handle_message(update, context)  # Usuario validado → Chatear
+        else:
+            await self.verify_email(update, context)  # Usuario no validado → Verificar email
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
@@ -101,24 +102,24 @@ class CoachBot:
         return False
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verifica el correo electrónico proporcionado por el usuario"""
-    user_email = update.message.text.strip()
-    chat_id = update.message.chat.id
-    username = update.message.from_user.username or "Desconocido"
+        """Verifica el correo electrónico proporcionado por el usuario"""
+        user_email = update.message.text.strip()
+        chat_id = update.message.chat.id
+        username = update.message.from_user.username or "Desconocido"
 
-    if chat_id in self.verified_users:
-        await update.message.reply_text("✅ Ya estás validado. Puedes escribir libremente.")
-        return
+        if chat_id in self.verified_users:
+            await update.message.reply_text("✅ Ya estás validado. Puedes escribir libremente.")
+            return
 
-    if not await self.is_user_whitelisted(user_email):
-        await update.message.reply_text(
-            "❌ Tu correo no está en la lista blanca. Contacta a soporte."
-        )
-        return
+        if not await self.is_user_whitelisted(user_email):
+            await update.message.reply_text(
+                "❌ Tu correo no está en la lista blanca. Contacta a soporte."
+            )
+            return
 
-    self.verified_users[chat_id] = user_email  # 🔥 Guardar usuario validado
-    await self.update_telegram_user(chat_id, user_email, username)
-    await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+        self.verified_users[chat_id] = user_email
+        await self.update_telegram_user(chat_id, user_email, username)
+        await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
 
     async def update_telegram_user(self, chat_id, email, username):
         """Actualiza el usuario de Telegram en la hoja de cálculo"""
@@ -152,37 +153,6 @@ class CoachBot:
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
         await update.message.reply_text("¡Hola! Proporciona tu email para iniciar.")
-
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los mensajes recibidos"""
-        try:
-            user_message = update.message.text.strip()
-            if not user_message:
-                return
-
-            processing_msg = await update.message.reply_text("🤖 Procesando...")
-
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": user_message}],
-                max_tokens=150
-            )
-
-            await processing_msg.delete()
-
-            if response and "choices" in response and response["choices"]:
-                reply_text = response["choices"][0]["message"]["content"].strip()
-                await update.message.reply_text(reply_text)
-            else:
-                await update.message.reply_text("😕 No pude generar una respuesta.")
-
-        except openai.error.OpenAIError as e:
-            logger.error(f"❌ Error en OpenAI: {e}")
-            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
-
-        except Exception as e:
-            logger.error(f"❌ Error en handle_message: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error inesperado.")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /help"""
