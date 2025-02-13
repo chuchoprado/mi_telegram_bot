@@ -33,6 +33,7 @@ class CoachBot:
         self.sheets_service = None
         self.started = False
         self.verified_users = {}  # Diccionario para almacenar usuarios verificados
+        self.conversation_history = {}  # Dictionary to store conversation history
 
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
@@ -165,28 +166,32 @@ class CoachBot:
             "👉 Escribe un mensaje y te responderé."
         )
 
-    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes recibidos después de la verificación"""
         try:
+            chat_id = update.message.chat.id
             user_message = update.message.text.strip()
             if not user_message:
                 return
+
+            if chat_id not in self.conversation_history:
+                self.conversation_history[chat_id] = []
+
+            self.conversation_history[chat_id].append({"role": "user", "content": user_message})
 
             processing_msg = await update.message.reply_text("🤖 Procesando tu solicitud...")
 
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "user", "content": user_message},
-                    {"role": "assistant", "content": ""}
-                ],
+                messages=self.conversation_history[chat_id],
                 max_tokens=150
             )
 
             await processing_msg.delete()
 
             if response and response.choices:
-                reply_text = response.choices[0].message.content.strip()
+                reply_text = response.choices[0].message["content"].strip()
+                self.conversation_history[chat_id].append({"role": "assistant", "content": reply_text})
                 await update.message.reply_text(reply_text)
             else:
                 await update.message.reply_text("😕 No pude generar una respuesta en este momento.")
