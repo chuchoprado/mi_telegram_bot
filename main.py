@@ -153,6 +153,14 @@ class CoachBot:
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
         await update.message.reply_text("¡Hola! Proporciona tu email para iniciar.")
+async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja el comando /help"""
+    await update.message.reply_text(
+        "Puedes preguntarme sobre:\n"
+        "- Recomendaciones de productos\n"
+        "- Videos de ejercicios\n"
+        "- Recursos disponibles"
+    )
 
 async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Maneja los mensajes recibidos después de la verificación"""
