@@ -244,7 +244,7 @@ class CoachBot:
         except Exception as e:
             logger.error(f"⚠️ Error inesperado creando thread en OpenAI para {chat_id}: {e}")
             return None
-
+        
     async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
         thread_id = await self.get_or_create_thread(chat_id)
@@ -302,11 +302,11 @@ class CoachBot:
             # Enviar mensaje del usuario al thread en OpenAI
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=self.conversation_history[chat_id] + [{"role": "user", "content": user_message}]
+                messages=self.conversation_history.get(chat_id, []) + [{"role": "user", "content": user_message}]
             )
 
             assistant_message = response['choices'][0]['message']['content']
-            self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
 
             # Enviar la respuesta al usuario en Telegram
             await update.message.reply_text(assistant_message)
