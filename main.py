@@ -225,63 +225,76 @@ class CoachBot:
         await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
     
     async def get_or_create_thread(self, chat_id):
-        """Obtiene un thread existente o crea uno nuevo para cada usuario."""
-        if chat_id in self.user_threads:
-            return self.user_threads[chat_id]
+    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+    if chat_id in self.user_threads:
+        return self.user_threads[chat_id]
 
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Start a new session"}]
-            )
-            thread_id = response['id']
-            self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
-            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
-            return thread_id
-        except openai.OpenAIError as e:
-            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"⚠️ Error inesperado creando thread en OpenAI para {chat_id}: {e}")
-            return None
-        
-    async def send_message_to_assistant(self, chat_id, user_message):
-        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
-        thread_id = await self.get_or_create_thread(chat_id)
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+    try:
+        # ✅ Crear un nuevo thread correctamente en OpenAI Assistant
+        thread = openai.beta.threads.create()
+        thread_id = thread.id
+        self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
+        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
+        return thread_id
 
-        try:
-            # Enviar mensaje del usuario al thread y obtener la respuesta en una sola llamada
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": user_message}]
-            )
-            run_id = response['id']
+    except Exception as e:
+        logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
+        return None
 
-            # Esperar y verificar el estado de la ejecución
-            while True:
-                run_response = openai.ChatCompletion.retrieve(id=run_id)
-                if run_response['status'] == "completed":
-                    messages = openai.ChatCompletion.list(thread_id=thread_id)
-                    assistant_message = next(
-                        (msg['content'] for msg in messages['choices'] if msg['role'] == "assistant"),
-                        "No pude generar una respuesta."
-                    )
-                    logger.info(f"Respuesta del asistente: {assistant_message}")
-                    return assistant_message
-                elif run_response['status'] in ["failed", "cancelled", "expired"]:
-                    logger.error(f"Run status: {run_response['status']}")
-                    return "Hubo un error al procesar tu solicitud."
-                time.sleep(1)
+async def send_message_to_assistant(self, chat_id, user_message):
+    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
+    thread_id = await self.get_or_create_thread(chat_id)
+    if not thread_id:
+        return "❌ No se pudo establecer conexión con el asistente."
 
-        except openai.OpenAIError as e:
-            logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
-            return "⚠️ Ocurrió un error obteniendo la respuesta."
-        except Exception as e:
-            logger.error(f"⚠️ Error inesperado enviando mensaje al asistente para {chat_id}: {e}")
-            return "⚠️ Ocurrió un error inesperado obteniendo la respuesta."
+    try:
+        # ✅ Enviar el mensaje del usuario al thread en OpenAI
+        openai.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
 
+        # ✅ Ejecutar el Assistant en ese thread
+        run = openai.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+        )
+
+        # 🔄 Esperar la respuesta del Assistant
+        while True:
+            run_status = openai.beta.threads.runs.retrieve(run.id, thread_id=thread_id)
+            if run_status.status == "completed":
+                break
+            await asyncio.sleep(1)  # Esperar para evitar peticiones excesivas
+
+        # ✅ Obtener la última respuesta generada por el Assistant
+        messages = openai.beta.threads.messages.list(thread_id=thread_id)
+        last_message = messages.data[0]  # Último mensaje generado
+        assistant_response = last_message.content[0].text.value
+
+        return assistant_response
+
+    except Exception as e:
+        logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
+        return "⚠️ Ocurrió un error obteniendo la respuesta."
+
+async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+    chat_id = update.effective_chat.id
+    logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
+
+    try:
+        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+        # ✅ Obtener respuesta del Assistant en el thread correcto
+        response = await self.send_message_to_assistant(chat_id, user_message)
+
+        # ✅ Enviar la respuesta al usuario en Telegram
+        await update.message.reply_text(response)
+
+    except Exception as e:
+        logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
+        await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
