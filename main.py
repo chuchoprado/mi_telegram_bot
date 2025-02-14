@@ -1,6 +1,7 @@
 import os
 import asyncio
 import io
+import sqlite3
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.constants import ChatAction
@@ -37,15 +38,71 @@ class CoachBot:
         self.verified_users = {}  # Diccionario para almacenar usuarios verificados
         self.conversation_history = {}  # Dictionary to store conversation history
         self.user_threads = {}  # Dictionary to store user threads
+        self.db_path = 'bot_data.db'
+        self._init_db()
 
         # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         self._setup_handlers()
         self._init_sheets()
 
+    def _init_db(self):
+        """Inicializa la base de datos SQLite."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                chat_id INTEGER PRIMARY KEY,
+                email TEXT,
+                username TEXT
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS conversations (
+                chat_id INTEGER,
+                role TEXT,
+                content TEXT
+            )
+        ''')
+        conn.commit()
+        conn.close()
+
+    def load_verified_users(self):
+        """Carga usuarios validados desde la base de datos."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('SELECT chat_id, email FROM users')
+        rows = cursor.fetchall()
+        for chat_id, email in rows:
+            self.verified_users[chat_id] = email
+        conn.close()
+
+    def save_verified_user(self, chat_id, email, username):
+        """Guarda un usuario validado en la base de datos."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT OR REPLACE INTO users (chat_id, email, username)
+            VALUES (?, ?, ?)
+        ''', (chat_id, email, username))
+        conn.commit()
+        conn.close()
+
+    def save_conversation(self, chat_id, role, content):
+        """Guarda un mensaje de conversación en la base de datos."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO conversations (chat_id, role, content)
+            VALUES (?, ?, ?)
+        ''', (chat_id, role, content))
+        conn.commit()
+        conn.close()
+
     async def async_init(self):
         """Inicialización asíncrona"""
         await self.app.initialize()
+        self.load_verified_users()  # Cargar usuarios validados
         if not self.started:
             self.started = True
             await self.app.start()
@@ -122,6 +179,7 @@ class CoachBot:
             return
 
         self.verified_users[chat_id] = user_email
+        self.save_verified_user(chat_id, user_email, username)
         await self.update_telegram_user(chat_id, user_email, username)
         await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
         
@@ -208,24 +266,21 @@ class CoachBot:
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-            # Ensure the thread exists
             if chat_id not in self.user_threads:
                 await self.create_openai_thread(chat_id)
 
-            # Add user message to the conversation history
             self.conversation_history[chat_id].append({"role": "user", "content": user_message})
+            self.save_conversation(chat_id, "user", user_message)  # Guardar mensaje de usuario
 
-            # Generate a response from OpenAI
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=self.conversation_history[chat_id]
             )
 
-            # Add assistant response to the conversation history
             assistant_message = response['choices'][0]['message']['content']
             self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+            self.save_conversation(chat_id, "assistant", assistant_message)  # Guardar respuesta del asistente
 
-            # Send the assistant's response to the user
             await update.message.reply_text(assistant_message)
 
         except Exception as e:
