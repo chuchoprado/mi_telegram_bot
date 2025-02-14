@@ -4,6 +4,7 @@ import io
 import sqlite3
 import json
 import logging
+import time
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.constants import ChatAction
@@ -11,7 +12,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
-from tenacity import retry, stop_after_attempt, wait_fixed
 
 # Configurar logging
 logging.basicConfig(
@@ -255,13 +255,25 @@ class CoachBot:
             # Enviar mensaje del usuario al thread y obtener la respuesta en una sola llamada
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=self.conversation_history.get(chat_id, []) + [{"role": "user", "content": user_message}]
+                messages=[{"role": "user", "content": user_message}]
             )
+            run_id = response['id']
 
-            assistant_message = response['choices'][0]['message']['content']
-            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
-
-            return assistant_message
+            # Esperar y verificar el estado de la ejecución
+            while True:
+                run_response = openai.ChatCompletion.retrieve(id=run_id)
+                if run_response['status'] == "completed":
+                    messages = openai.ChatCompletion.list(thread_id=thread_id)
+                    assistant_message = next(
+                        (msg['content'] for msg in messages['choices'] if msg['role'] == "assistant"),
+                        "No pude generar una respuesta."
+                    )
+                    logger.info(f"Respuesta del asistente: {assistant_message}")
+                    return assistant_message
+                elif run_response['status'] in ["failed", "cancelled", "expired"]:
+                    logger.error(f"Run status: {run_response['status']}")
+                    return "Hubo un error al procesar tu solicitud."
+                time.sleep(1)
 
         except openai.OpenAIError as e:
             logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
@@ -269,7 +281,7 @@ class CoachBot:
         except Exception as e:
             logger.error(f"⚠️ Error inesperado enviando mensaje al asistente para {chat_id}: {e}")
             return "⚠️ Ocurrió un error inesperado obteniendo la respuesta."
-        
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
@@ -364,3 +376,4 @@ async def webhook(request: Request):
 @app.get("/")
 async def health_check():
     return {"status": "alive"}
+    
