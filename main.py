@@ -242,47 +242,37 @@ class CoachBot:
             logger.error(f"❌ Error creando thread en OpenAI: {e}")
             return None
 
+    async def send_message_to_assistant(self, chat_id, user_message):
+        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
+        thread_id = await self.get_or_create_thread(chat_id)
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
+
+        try:
+            # Enviar mensaje del usuario al thread
+            openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=self.conversation_history[chat_id] + [{"role": "user", "content": user_message}]
+            )
+
+            # Obtener la respuesta más reciente del asistente
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=self.conversation_history[chat_id]
+            )
+            assistant_message = response['choices'][0]['message']['content']
+            self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+
+            return assistant_message
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando mensaje al asistente: {e}")
+            return "⚠️ Ocurrió un error obteniendo la respuesta."
+
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
         await update.message.reply_text("¡Hola! Proporciona tu email para iniciar.")
-        async def send_message_to_assistant(self, chat_id, user_message):
-    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
-    thread_id = await self.get_or_create_thread(chat_id)
-    if not thread_id:
-        return "❌ No se pudo establecer conexión con el asistente."
-
-    try:
-        # Enviar mensaje del usuario al thread
-        openai.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",  # Asegurar que el mensaje es del usuario
-            content=user_message
-        )
-
-        # Ejecutar el assistant en el thread
-        run = openai.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-
-        # Esperar la respuesta del asistente
-        while True:
-            run_status = openai.beta.threads.runs.retrieve(run.id, thread_id=thread_id)
-            if run_status.status == "completed":
-                break
-            await asyncio.sleep(1)
-
-        # Obtener la respuesta más reciente del asistente
-        messages = openai.beta.threads.messages.list(thread_id=thread_id)
-        last_message = messages.data[0]  # Último mensaje generado por OpenAI Assistant
-        assistant_response = last_message.content[0].text.value
-
-        return assistant_response
-
-    except Exception as e:
-        logger.error(f"❌ Error enviando mensaje al asistente: {e}")
-        return "⚠️ Ocurrió un error obteniendo la respuesta."
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /help"""
@@ -370,3 +360,4 @@ async def webhook(request: Request):
 @app.get("/")
 async def health_check():
     return {"status": "alive"}
+    
