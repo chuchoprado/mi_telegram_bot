@@ -231,8 +231,8 @@ class CoachBot:
 
         try:
             # Crear un nuevo thread correctamente en OpenAI Assistant
-            thread = openai.beta.threads.create()
-            thread_id = thread.id
+            thread = openai.Thread.create()
+            thread_id = thread['id']
             self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
             logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
             return thread_id
@@ -249,29 +249,29 @@ class CoachBot:
 
         try:
             # Enviar el mensaje del usuario al thread en OpenAI
-            openai.beta.threads.messages.create(
+            openai.Message.create(
                 thread_id=thread_id,
                 role="user",
                 content=user_message
             )
 
             # Ejecutar el Assistant en ese thread
-            run = openai.beta.threads.runs.create(
+            run = openai.Thread.run(
                 thread_id=thread_id,
                 assistant_id=self.assistant_id
             )
 
             # Esperar la respuesta del Assistant
             while True:
-                run_status = openai.beta.threads.runs.retrieve(run.id, thread_id=thread_id)
-                if run_status.status == "completed":
+                run_status = openai.Thread.retrieve_run(run['id'], thread_id=thread_id)
+                if run_status['status'] == "completed":
                     break
                 await asyncio.sleep(1)  # Esperar para evitar peticiones excesivas
 
             # Obtener la última respuesta generada por el Assistant
-            messages = openai.beta.threads.messages.list(thread_id=thread_id)
-            last_message = messages.data[0]  # Último mensaje generado
-            assistant_response = last_message.content[0].text.value
+            messages = openai.Message.list(thread_id=thread_id)
+            last_message = messages['data'][0]  # Último mensaje generado
+            assistant_response = last_message['content']
 
             return assistant_response
 
