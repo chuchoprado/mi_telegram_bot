@@ -231,8 +231,11 @@ class CoachBot:
 
         try:
             # Crear un nuevo thread correctamente en OpenAI Assistant
-            thread = openai.Thread.create()
-            thread_id = thread['id']
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Iniciar nueva conversación"}]
+            )
+            thread_id = response['id']
             self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
             logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
             return thread_id
@@ -249,31 +252,17 @@ class CoachBot:
 
         try:
             # Enviar el mensaje del usuario al thread en OpenAI
-            openai.Message.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_message
+            messages = self.conversation_history.get(chat_id, [])
+            messages.append({"role": "user", "content": user_message})
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=messages
             )
 
-            # Ejecutar el Assistant en ese thread
-            run = openai.Thread.run(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+            assistant_message = response['choices'][0]['message']['content']
+            self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
 
-            # Esperar la respuesta del Assistant
-            while True:
-                run_status = openai.Thread.retrieve_run(run['id'], thread_id=thread_id)
-                if run_status['status'] == "completed":
-                    break
-                await asyncio.sleep(1)  # Esperar para evitar peticiones excesivas
-
-            # Obtener la última respuesta generada por el Assistant
-            messages = openai.Message.list(thread_id=thread_id)
-            last_message = messages['data'][0]  # Último mensaje generado
-            assistant_response = last_message['content']
-
-            return assistant_response
+            return assistant_message
 
         except Exception as e:
             logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
