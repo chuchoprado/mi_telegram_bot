@@ -8,10 +8,10 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import openai  
+import openai
 import json
 import logging
-from tenacity import retry, stop_after_attempt, wait_fixed  # Add tenacity for retries
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 # Configurar logging
 logging.basicConfig(
