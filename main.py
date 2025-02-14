@@ -224,7 +224,7 @@ class CoachBot:
         await self.get_or_create_thread(chat_id)  # Asegurar que el usuario tiene un thread
         await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
     
-    async def get_or_create_thread(self, chat_id):
+async def get_or_create_thread(self, chat_id):
     """Obtiene un thread existente o crea uno nuevo para cada usuario."""
     if chat_id in self.user_threads:
         return self.user_threads[chat_id]
@@ -241,7 +241,7 @@ class CoachBot:
     except Exception as e:
         logger.error(f"❌ Error creando thread en OpenAI: {e}")
         return None
-
+        
 async def send_message_to_assistant(self, chat_id, user_message):
     """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
     thread_id = await self.get_or_create_thread(chat_id)
