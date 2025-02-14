@@ -260,9 +260,12 @@ class CoachBot:
 
             return assistant_message
 
-        except Exception as e:
+        except openai.OpenAIError as e:
             logger.error(f"❌ Error enviando mensaje al asistente: {e}")
             return "⚠️ Ocurrió un error obteniendo la respuesta."
+        except Exception as e:
+            logger.error(f"⚠️ Error inesperado: {e}")
+            return "⚠️ Ocurrió un error inesperado obteniendo la respuesta."
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
@@ -305,9 +308,12 @@ class CoachBot:
             # Enviar la respuesta al usuario en Telegram
             await update.message.reply_text(assistant_message)
 
-        except Exception as e:
+        except openai.OpenAIError as e:
             logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
+        except Exception as e:
+            logger.error(f"⚠️ Error inesperado: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error inesperado obteniendo la respuesta.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes recibidos después de la verificación"""
@@ -324,7 +330,7 @@ class CoachBot:
             await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
         except Exception as e:
-            logger.error(f"❌ Error en handle_message: {e}")
+            logger.error(f"⚠️ Error inesperado: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
 # Crear instancia del bot
