@@ -2,15 +2,15 @@ import os
 import asyncio
 import io
 import sqlite3
+import json
+import logging
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import openai  
-import json
-import logging
+import openai
 from tenacity import retry, stop_after_attempt, wait_fixed
 
 # Configurar logging
@@ -36,8 +36,8 @@ class CoachBot:
         self.sheets_service = None
         self.started = False
         self.verified_users = {}  # Diccionario para almacenar usuarios verificados
-        self.conversation_history = {}  # Dictionary to store conversation history
-        self.user_threads = {}  # Dictionary to store user threads
+        self.conversation_history = {}  # Diccionario para almacenar el historial de conversaciones
+        self.user_threads = {}  # Diccionario para almacenar los threads de los usuarios
         self.db_path = 'bot_data.db'
         self._init_db()
 
@@ -183,7 +183,7 @@ class CoachBot:
         await self.update_telegram_user(chat_id, user_email, username)
         await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
         
-        # Send a welcome message and invite the user to interact with El Coach
+        # Enviar un mensaje de bienvenida e invitar al usuario a interactuar con El Coach
         await self.send_welcome_message(chat_id, username)
 
     async def update_telegram_user(self, chat_id, email, username):
@@ -224,46 +224,24 @@ class CoachBot:
         await self.get_or_create_thread(chat_id)  # Asegurar que el usuario tiene un thread
         await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
     
-async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo para cada usuario."""
-    if chat_id in self.user_threads:
-        return self.user_threads[chat_id]
+    async def get_or_create_thread(self, chat_id):
+        """Obtiene un thread existente o crea uno nuevo para cada usuario."""
+        if chat_id in self.user_threads:
+            return self.user_threads[chat_id]
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "Start a new session"}]
-        )
-        thread_id = response['id']  # Asegúrate de que estás accediendo al ID del thread correctamente
-        self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
-        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
-        return thread_id
-    except Exception as e:
-        logger.error(f"❌ Error creando thread en OpenAI: {e}")
-        return None
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Start a new session"}]
+            )
+            thread_id = response['id']  # Asegúrate de que estás accediendo al ID del thread correctamente
+            self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
+            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
+            return thread_id
+        except Exception as e:
+            logger.error(f"❌ Error creando thread en OpenAI: {e}")
+            return None
         
-async def send_message_to_assistant(self, chat_id, user_message):
-    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
-    thread_id = await self.get_or_create_thread(chat_id)
-    if not thread_id:
-        return "❌ No se pudo establecer conexión con el asistente."
-
-    try:
-        # Enviar mensaje del usuario al thread y obtener la respuesta en una sola llamada
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=self.conversation_history[chat_id] + [{"role": "user", "content": user_message}]
-        )
-
-        assistant_message = response['choices'][0]['message']['content']
-        self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
-
-        return assistant_message
-
-    except Exception as e:
-        logger.error(f"❌ Error enviando mensaje al asistente: {e}")
-        return "⚠️ Ocurrió un error obteniendo la respuesta."
-
     async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
         thread_id = await self.get_or_create_thread(chat_id)
@@ -271,17 +249,12 @@ async def send_message_to_assistant(self, chat_id, user_message):
             return "❌ No se pudo establecer conexión con el asistente."
 
         try:
-            # Enviar mensaje del usuario al thread
-            openai.ChatCompletion.create(
+            # Enviar mensaje del usuario al thread y obtener la respuesta en una sola llamada
+            response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=self.conversation_history[chat_id] + [{"role": "user", "content": user_message}]
             )
 
-            # Obtener la respuesta más reciente del asistente
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=self.conversation_history[chat_id]
-            )
             assistant_message = response['choices'][0]['message']['content']
             self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
 
@@ -290,7 +263,7 @@ async def send_message_to_assistant(self, chat_id, user_message):
         except Exception as e:
             logger.error(f"❌ Error enviando mensaje al asistente: {e}")
             return "⚠️ Ocurrió un error obteniendo la respuesta."
-
+        
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
@@ -382,4 +355,3 @@ async def webhook(request: Request):
 @app.get("/")
 async def health_check():
     return {"status": "alive"}
-    
