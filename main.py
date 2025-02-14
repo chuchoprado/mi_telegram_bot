@@ -11,7 +11,7 @@ from googleapiclient.discovery import build
 import openai  
 import json
 import logging
-from tenacity import retry, stop_after_attempt, wait_fixed  # Add tenacity for retries
+from tenacity import retry, stop_after_attempt, wait_fixed
 
 # Configurar logging
 logging.basicConfig(
@@ -214,64 +214,49 @@ class CoachBot:
         except Exception as e:
             logger.error(f"Error actualizando usuario: {e}")
 
-async def send_welcome_message(self, chat_id, username):
-    """Envía un mensaje de bienvenida y crea un thread en OpenAI."""
-    welcome_message = (
-        f"¡Hola {username}! 🎉\n\n"
-        "Bienvenido a El Coach. Estoy aquí para ayudarte con recomendaciones, ejercicios y más.\n\n"
-        "Escríbeme cualquier pregunta y te responderé. 💪"
-    )
-    await self.get_or_create_thread(chat_id)  # Asegurar que el usuario tiene un thread
-    await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
-  
+    async def send_welcome_message(self, chat_id, username):
+        """Envía un mensaje de bienvenida y crea un thread en OpenAI."""
+        welcome_message = (
+            f"¡Hola {username}! 🎉\n\n"
+            "Bienvenido a El Coach. Estoy aquí para ayudarte con recomendaciones, ejercicios y más.\n\n"
+            "Escríbeme cualquier pregunta y te responderé. 💪"
+        )
+        await self.get_or_create_thread(chat_id)  # Asegurar que el usuario tiene un thread
+        await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
+    
     async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo para cada usuario."""
-    if chat_id in self.user_threads:
-        return self.user_threads[chat_id]
+        """Obtiene un thread existente o crea uno nuevo para cada usuario."""
+        if chat_id in self.user_threads:
+            return self.user_threads[chat_id]
 
-    try:
-        thread = openai.beta.threads.create()
-        thread_id = thread.id
-        self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
-        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
-        return thread_id
-    except Exception as e:
-        logger.error(f"❌ Error creando thread en OpenAI: {e}")
-        return None
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Start a new session"}]
+            )
+            thread_id = response['id']
+            self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
+            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
+            return thread_id
+        except Exception as e:
+            logger.error(f"❌ Error creando thread en OpenAI: {e}")
+            return None
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja el comando /start"""
         logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
         await update.message.reply_text("¡Hola! Proporciona tu email para iniciar.")
-
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /help"""
-        await update.message.reply_text(
-            "📌 Puedes preguntarme sobre:\n"
-            "- Recomendaciones de productos\n"
-            "- Videos de ejercicios\n"
-            "- Recursos disponibles\n"
-            "- Instrucciones sobre el bot\n\n"
-            "👉 Escribe un mensaje y te responderé."
-        )
-
-async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-    chat_id = update.effective_chat.id
-    logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
+        async def send_message_to_assistant(self, chat_id, user_message):
+    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
+    thread_id = await self.get_or_create_thread(chat_id)
+    if not thread_id:
+        return "❌ No se pudo establecer conexión con el asistente."
 
     try:
-        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-        # Obtener el thread correcto para el usuario
-        thread_id = await self.get_or_create_thread(chat_id)
-        if not thread_id:
-            await update.message.reply_text("❌ Error al iniciar la conversación.")
-            return
-
-        # Enviar mensaje del usuario al thread en OpenAI
+        # Enviar mensaje del usuario al thread
         openai.beta.threads.messages.create(
             thread_id=thread_id,
-            role="user",
+            role="user",  # Asegurar que el mensaje es del usuario
             content=user_message
         )
 
@@ -286,19 +271,58 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
             run_status = openai.beta.threads.runs.retrieve(run.id, thread_id=thread_id)
             if run_status.status == "completed":
                 break
-            await asyncio.sleep(1)  # Esperar para evitar peticiones excesivas
+            await asyncio.sleep(1)
 
-        # Obtener la última respuesta generada por el asistente
+        # Obtener la respuesta más reciente del asistente
         messages = openai.beta.threads.messages.list(thread_id=thread_id)
-        last_message = messages.data[0]  # Último mensaje del asistente
+        last_message = messages.data[0]  # Último mensaje generado por OpenAI Assistant
         assistant_response = last_message.content[0].text.value
 
-        # Enviar la respuesta al usuario en Telegram
-        await update.message.reply_text(assistant_response)
+        return assistant_response
 
     except Exception as e:
-        logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
+        logger.error(f"❌ Error enviando mensaje al asistente: {e}")
+        return "⚠️ Ocurrió un error obteniendo la respuesta."
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja el comando /help"""
+        await update.message.reply_text(
+            "📌 Puedes preguntarme sobre:\n"
+            "- Recomendaciones de productos\n"
+            "- Videos de ejercicios\n"
+            "- Recursos disponibles\n"
+            "- Instrucciones sobre el bot\n\n"
+            "👉 Escribe un mensaje y te responderé."
+        )
+
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        chat_id = update.effective_chat.id
+        logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
+
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+            # Obtener el thread correcto para el usuario
+            thread_id = await self.get_or_create_thread(chat_id)
+            if not thread_id:
+                await update.message.reply_text("❌ Error al iniciar la conversación.")
+                return
+
+            # Enviar mensaje del usuario al thread en OpenAI
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=self.conversation_history[chat_id] + [{"role": "user", "content": user_message}]
+            )
+
+            assistant_message = response['choices'][0]['message']['content']
+            self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+
+            # Enviar la respuesta al usuario en Telegram
+            await update.message.reply_text(assistant_message)
+
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes recibidos después de la verificación"""
@@ -346,4 +370,3 @@ async def webhook(request: Request):
 @app.get("/")
 async def health_check():
     return {"status": "alive"}
-
