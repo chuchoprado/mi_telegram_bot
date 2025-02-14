@@ -234,14 +234,17 @@ class CoachBot:
                 model="gpt-3.5-turbo",
                 messages=[{"role": "system", "content": "Start a new session"}]
             )
-            thread_id = response['id']  # Asegúrate de que estás accediendo al ID del thread correctamente
+            thread_id = response['id']
             self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
             logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
             return thread_id
-        except Exception as e:
-            logger.error(f"❌ Error creando thread en OpenAI: {e}")
+        except openai.OpenAIError as e:
+            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
             return None
-        
+        except Exception as e:
+            logger.error(f"⚠️ Error inesperado creando thread en OpenAI para {chat_id}: {e}")
+            return None
+
     async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
         thread_id = await self.get_or_create_thread(chat_id)
@@ -252,19 +255,19 @@ class CoachBot:
             # Enviar mensaje del usuario al thread y obtener la respuesta en una sola llamada
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=self.conversation_history[chat_id] + [{"role": "user", "content": user_message}]
+                messages=self.conversation_history.get(chat_id, []) + [{"role": "user", "content": user_message}]
             )
 
             assistant_message = response['choices'][0]['message']['content']
-            self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
 
             return assistant_message
 
         except openai.OpenAIError as e:
-            logger.error(f"❌ Error enviando mensaje al asistente: {e}")
+            logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
             return "⚠️ Ocurrió un error obteniendo la respuesta."
         except Exception as e:
-            logger.error(f"⚠️ Error inesperado: {e}")
+            logger.error(f"⚠️ Error inesperado enviando mensaje al asistente para {chat_id}: {e}")
             return "⚠️ Ocurrió un error inesperado obteniendo la respuesta."
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
