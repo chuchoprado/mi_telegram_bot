@@ -214,10 +214,9 @@ class CoachBot:
             return self.user_threads[chat_id]
 
         try:
-            response = openai.Completion.create(
-                model="text-davinci-003",
-                prompt="Create a new thread",
-                max_tokens=1
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Create a new thread"}]
             )
             thread_id = response['id']
             self.user_threads[chat_id] = thread_id
@@ -235,14 +234,13 @@ class CoachBot:
 
         try:
             # Crear un mensaje en el thread
-            message = openai.Completion.create(
-                model="text-davinci-003",
-                prompt=user_message,
-                max_tokens=150
+            message = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": user_message}]
             )
 
             # Obtener la respuesta del asistente
-            assistant_message = message.choices[0].text.strip()
+            assistant_message = message.choices[0].message['content'].strip()
             self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
 
             return assistant_message
