@@ -209,111 +209,91 @@ class CoachBot:
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-    if chat_id in self.user_threads:
-        return self.user_threads[chat_id]
+        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+        if chat_id in self.user_threads:
+            return self.user_threads[chat_id]
 
-    try:
-        thread = openai.beta.threads.create()
-        if not thread or not thread.id:
-            raise Exception("OpenAI no devolvió un thread válido.")
-
-        self.user_threads[chat_id] = thread.id
-        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread.id}")
-        return thread.id
-
-    except Exception as e:
-        logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-        return None
+        try:
+            response = openai.Completion.create(
+                model="text-davinci-002",
+                prompt="Create a new thread",
+                max_tokens=1
+            )
+            thread_id = response['id']
+            self.user_threads[chat_id] = thread_id
+            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
+            return thread_id
+        except Exception as e:
+            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
+            return None
 
     async def send_message_to_assistant(self, chat_id, user_message):
-    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
-    thread_id = await self.get_or_create_thread(chat_id)
-    if not thread_id:
-        return "❌ No se pudo establecer conexión con el asistente."
+        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
+        thread_id = await self.get_or_create_thread(chat_id)
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
 
-    try:
-        # Enviar mensaje del usuario al thread
-        openai.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-
-        # Ejecutar el assistant en ese thread
-        run = openai.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-
-        # Esperar la respuesta del Assistant
-        while True:
-            run_status = openai.beta.threads.runs.retrieve(run.id, thread_id=thread_id)
-            if run_status.status == 'completed':
-                break
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                return f"❌ Error: El asistente no pudo completar la respuesta. Estado: {run_status.status}"
-            await asyncio.sleep(1)
-
-        # Obtener los mensajes más recientes del thread
-        messages = openai.beta.threads.messages.list(thread_id=thread_id)
-
-        # ✅ Tomar el último mensaje generado por el Assistant
-        for msg in messages.data:
-            if msg.role == "assistant":
-                return msg.content[0].text.value
-
-        return "⚠️ No se recibió respuesta del asistente."
-
-    except Exception as e:
-        logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
-        return f"⚠️ Ocurrió un error obteniendo la respuesta: {str(e)}"
-
-async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-    chat_id = update.effective_chat.id
-    logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
-
-    try:
-        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-        response = await self.send_message_to_assistant(chat_id, user_message)
-
-        # Verificar si la respuesta es válida
-        if not response or response.strip() == "":
-            response = "⚠️ No obtuve una respuesta válida del asistente. Intenta nuevamente."
-
-        await update.message.reply_text(response)
-
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
-
-async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat.id
-    user_email = update.message.text.strip().lower()
-    username = update.message.from_user.username or "Unknown"
-
-    if '@' not in user_email or '.' not in user_email:
-        await update.message.reply_text("❌ Por favor, proporciona un email válido.")
-        return
-
-    try:
-        if not await self.is_user_whitelisted(user_email):
-            await update.message.reply_text(
-                "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+        try:
+            # Agregar el mensaje del usuario al thread
+            message = openai.Completion.create(
+                model="text-davinci-002",
+                prompt=user_message,
+                max_tokens=150
             )
+
+            # Obtener la respuesta del asistente
+            assistant_message = message.choices[0].text.strip()
+            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
+
+            return assistant_message
+
+        except openai.error.OpenAIError as oe:
+            logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
+            return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
+            return "⚠️ Ocurrió un error obteniendo la respuesta."
+
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        chat_id = update.effective_chat.id
+        logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
+
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+            response = await self.send_message_to_assistant(chat_id, user_message)
+            await update.message.reply_text(response)
+
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
+
+    async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        user_email = update.message.text.strip().lower()
+        username = update.message.from_user.username or "Unknown"
+
+        if not '@' in user_email or not '.' in user_email:
+            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
             return
 
-        # ✅ CORRECCIÓN: Llamamos a get_or_create_thread en lugar de create_thread()
-        thread_id = await self.get_or_create_thread(chat_id)
-        self.user_threads[chat_id] = thread_id
+        try:
+            if not await self.is_user_whitelisted(user_email):
+                await update.message.reply_text(
+                    "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+                )
+                return
 
-        self.save_verified_user(chat_id, user_email, username)
-        await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+            thread_id = await self.get_or_create_thread(chat_id)
+            self.user_threads[chat_id] = thread_id
 
-    except Exception as e:
-        logger.error(f"❌ Error verificando email para {chat_id}: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+            self.save_verified_user(chat_id, user_email, username)
+            await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+
+        except Exception as e:
+            logger.error(f"❌ Error verificando email para {chat_id}: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
 
 # Manejo de errores mejorado para la creación del bot
 try:
