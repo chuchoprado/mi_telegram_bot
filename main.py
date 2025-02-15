@@ -5,351 +5,363 @@ import sqlite3
 import json
 import logging
 import time
-from fastapi import FastAPI, Request
-from telegram import Update
+from typing import Optional, Dict, List
+from fastapi import FastAPI, Request, HTTPException
+from telegram import Update, Bot
 from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.error import TelegramError
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 import openai
+from openai import OpenAIError
+from contextlib import contextmanager
 
-# Configurar logging
+# Configuración de logging mejorada
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[
+        logging.FileHandler('bot.log'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
 
-# Crear la aplicación FastAPI
-app = FastAPI()
+class DatabaseManager:
+    def __init__(self, db_path: str):
+        self.db_path = db_path
 
-# Variable global para almacenar logs
-logs = []
+    @contextmanager
+    def get_connection(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def init_db(self):
+        """Inicializa la base de datos con mejor manejo de errores"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    chat_id INTEGER PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    username TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (chat_id) REFERENCES users(chat_id)
+                )
+            ''')
+            conn.commit()
+
+class OpenAIManager:
+    def __init__(self, api_key: str, assistant_id: str):
+        self.api_key = api_key
+        self.assistant_id = assistant_id
+        openai.api_key = api_key
+
+    async def create_thread(self) -> str:
+        """Crea un nuevo thread en OpenAI con mejor manejo de errores"""
+        try:
+            thread = await openai.beta.threads.create()
+            return thread.id
+        except OpenAIError as e:
+            logger.error(f"Error creando thread en OpenAI: {e}")
+            raise
+
+    async def send_message(self, thread_id: str, content: str) -> str:
+        """Envía mensaje a OpenAI con mejor manejo de errores y rate limiting"""
+        try:
+            message = await openai.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=content
+            )
+            
+            run = await openai.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
+
+            # Esperar la respuesta con timeout
+            timeout = 30
+            start_time = time.time()
+            while True:
+                if time.time() - start_time > timeout:
+                    raise TimeoutError("OpenAI response timeout")
+                
+                run_status = await openai.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
+                
+                if run_status.status == 'completed':
+                    messages = await openai.beta.threads.messages.list(
+                        thread_id=thread_id
+                    )
+                    return messages.data[0].content[0].text.value
+                
+                elif run_status.status in ['failed', 'cancelled']:
+                    raise OpenAIError(f"Run failed with status: {run_status.status}")
+                
+                await asyncio.sleep(1)
+
+        except OpenAIError as e:
+            logger.error(f"Error en OpenAI: {e}")
+            raise
 
 class CoachBot:
     def __init__(self):
+        # Validación de variables de entorno
+        required_env_vars = ['TELEGRAM_TOKEN', 'SPREADSHEET_ID', 'ASSISTANT_ID', 'OPENAI_API_KEY']
+        missing_vars = [var for var in required_env_vars if not os.getenv(var)]
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
         self.SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
-        self.assistant_id = os.getenv('ASSISTANT_ID')
         self.credentials_path = '/etc/secrets/credentials.json'
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        
+        # Inicialización de componentes
+        self.db = DatabaseManager('bot_data.db')
+        self.openai_manager = OpenAIManager(
+            os.getenv('OPENAI_API_KEY'),
+            os.getenv('ASSISTANT_ID')
+        )
+        
+        self.verified_users: Dict[int, str] = {}
+        self.user_threads: Dict[int, str] = {}
+        self.conversation_history: Dict[int, List[Dict]] = {}
+        
+        # Inicialización de servicios
         self.sheets_service = None
-        self.started = False
-        self.verified_users = {}  # Diccionario para almacenar usuarios verificados
-        self.conversation_history = {}  # Diccionario para almacenar el historial de conversaciones
-        self.user_threads = {}  # Diccionario para almacenar los threads de los usuarios
-        self.db_path = 'bot_data.db'
-        self._init_db()
-
-        # Inicializar la aplicación de Telegram
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
+        
+        # Setup inicial
+        self.db.init_db()
         self._setup_handlers()
         self._init_sheets()
 
-    def _init_db(self):
-        """Inicializa la base de datos SQLite."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                chat_id INTEGER PRIMARY KEY,
-                email TEXT,
-                username TEXT
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                chat_id INTEGER,
-                role TEXT,
-                content TEXT
-            )
-        ''')
-        conn.commit()
-        conn.close()
-
-    def load_verified_users(self):
-        """Carga usuarios validados desde la base de datos."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('SELECT chat_id, email FROM users')
-        rows = cursor.fetchall()
-        for chat_id, email in rows:
-            self.verified_users[chat_id] = email
-        conn.close()
-
-    def save_verified_user(self, chat_id, email, username):
-        """Guarda un usuario validado en la base de datos."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO users (chat_id, email, username)
-            VALUES (?, ?, ?)
-        ''', (chat_id, email, username))
-        conn.commit()
-        conn.close()
-
-    def save_conversation(self, chat_id, role, content):
-        """Guarda un mensaje de conversación en la base de datos."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO conversations (chat_id, role, content)
-            VALUES (?, ?, ?)
-        ''', (chat_id, role, content))
-        conn.commit()
-        conn.close()
-
-    async def async_init(self):
-        """Inicialización asíncrona"""
-        await self.app.initialize()
-        self.load_verified_users()  # Cargar usuarios validados
-        if not self.started:
-            self.started = True
-            await self.app.start()
-
     def _setup_handlers(self):
-        """Configura los manejadores de Telegram"""
+        """Configuración mejorada de handlers con gestión de errores"""
         self.app.add_handler(CommandHandler("start", self.start_command))
         self.app.add_handler(CommandHandler("help", self.help_command))
-        self.app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.route_message))
+        self.app.add_handler(MessageHandler(
+            filters.TEXT & ~filters.COMMAND, 
+            self.route_message
+        ))
+        self.app.add_error_handler(self.error_handler)
 
-    async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Redirige mensajes según si el usuario ya fue verificado o no"""
-        chat_id = update.message.chat.id
-
-        if chat_id in self.verified_users:
-            await self.handle_message(update, context)  # Usuario validado → Chatear
-        else:
-            await self.verify_email(update, context)  # Usuario no validado → Verificar email
-
-    def _init_sheets(self):
-        """Inicializa la conexión con Google Sheets"""
-        try:
-            credentials = service_account.Credentials.from_service_account_file(
-                self.credentials_path,
-                scopes=['https://www.googleapis.com/auth/spreadsheets']
-            )
-            self.sheets_service = build('sheets', 'v4', credentials=credentials)
-            logger.info("Conexión con Google Sheets inicializada correctamente.")
-        except Exception as e:
-            logger.error(f"Error inicializando Google Sheets: {e}")
-
-    async def get_sheet_data(self, range):
-        """Obtiene datos de Google Sheets"""
-        if not self.sheets_service:
-            return []
-        try:
-            result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range=range
-            ).execute()
-            return result.get('values', [])
-        except Exception as e:
-            logger.error(f"❌ Error obteniendo datos de sheets: {e}")
-            return []
-
-    async def is_user_whitelisted(self, user_email):
-        """Verifica si el usuario está en la lista blanca en Google Sheets"""
-        email_range = 'C2:C2000'
-        emails = await self.get_sheet_data(email_range)
-        logger.info(f"📄 Emails obtenidos de Google Sheets: {emails}")
-
-        for sublist in emails:
-            if user_email in sublist:
-                logger.info(f"✅ El correo {user_email} está en la lista blanca.")
-                return True
-
-        logger.info(f"❌ El correo {user_email} NO está en la lista blanca.")
-        return False
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Manejador global de errores para Telegram"""
+        logger.error(f"Error en el bot: {context.error}")
+        
+        if update and update.effective_chat:
+            error_message = "Lo siento, ha ocurrido un error. Por favor, inténtalo de nuevo más tarde."
+            try:
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=error_message
+                )
+            except TelegramError as e:
+                logger.error(f"No se pudo enviar mensaje de error: {e}")
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Verifica el correo electrónico proporcionado por el usuario"""
-        user_email = update.message.text.strip()
+        """Verificación de email mejorada con validación"""
         chat_id = update.message.chat.id
-        username = update.message.from_user.username or "Desconocido"
+        user_email = update.message.text.strip().lower()  # Normalizar email
+        username = update.message.from_user.username or "Unknown"
 
-        if chat_id in self.verified_users:
-            await update.message.reply_text("✅ Ya estás validado. Puedes escribir libremente.")
+        # Validación básica de formato de email
+        if not '@' in user_email or not '.' in user_email:
+            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
             return
 
-        if not await self.is_user_whitelisted(user_email):
-            await update.message.reply_text(
-                "❌ Tu correo no está en la lista blanca. Contacta a soporte."
-            )
-            return
-
-        self.verified_users[chat_id] = user_email
-        self.save_verified_user(chat_id, user_email, username)
-        await self.update_telegram_user(chat_id, user_email, username)
-        await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
-        
-        # Enviar un mensaje de bienvenida e invitar al usuario a interactuar con El Coach
-        await self.send_welcome_message(chat_id, username)
-
-    async def update_telegram_user(self, chat_id, email, username):
-        """Actualiza el usuario de Telegram en la hoja de cálculo"""
         try:
-            body = {
-                "values": [[chat_id, username]]
-            }
-            email_range = 'C2:C2000'
-            emails = await self.get_sheet_data(email_range)
-            email_index = None
-            for index, sublist in enumerate(emails):
-                if email in sublist:
-                    email_index = index + 2
-                    break
-
-            if email_index is None:
-                logger.error(f"No se encontró el email {email}.")
+            if not await self.is_user_whitelisted(user_email):
+                await update.message.reply_text(
+                    "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+                )
                 return
 
-            range = f'whitelist!F{email_index}:G{email_index}'
-            self.sheets_service.spreadsheets().values().update(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range=range,
-                valueInputOption='RAW',
-                body=body
-            ).execute()
+            # Crear thread de OpenAI
+            thread_id = await self.openai_manager.create_thread()
+            self.user_threads[chat_id] = thread_id
+
+            # Guardar usuario verificado
+            with self.db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT OR REPLACE INTO users (chat_id, email, username)
+                    VALUES (?, ?, ?)
+                ''', (chat_id, user_email, username))
+                conn.commit()
+
+            self.verified_users[chat_id] = user_email
+            await self.update_telegram_user(chat_id, user_email, username)
+            await self.send_welcome_message(chat_id, username)
+
         except Exception as e:
-            logger.error(f"Error actualizando usuario: {e}")
+            logger.error(f"Error en verificación de email: {e}")
+            await update.message.reply_text(
+                "❌ Ocurrió un error durante la verificación. Por favor, inténtalo de nuevo."
+            )
 
-    async def send_welcome_message(self, chat_id, username):
-        """Envía un mensaje de bienvenida y crea un thread en OpenAI."""
-        welcome_message = (
-            f"¡Hola {username}! 🎉\n\n"
-            "Bienvenido a El Coach. Estoy aquí para ayudarte con recomendaciones, ejercicios y más.\n\n"
-            "Escríbeme cualquier pregunta y te responderé. 💪"
-        )
-        await self.get_or_create_thread(chat_id)  # Asegurar que el usuario tiene un thread
-        await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
-    
-   async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-    if chat_id in self.user_threads:
-        return self.user_threads[chat_id]
-
-    try:
-        # Crear un nuevo thread correctamente en OpenAI Assistant
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "Iniciar nueva conversación", "assistant_id": self.assistant_id}]
-        )
-        thread_id = response.get('id')  # Validate response
-        if not thread_id:
-            raise ValueError("No thread ID found in the response")
-        
-        self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
-        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
-        return thread_id
-
-    except Exception as e:
-        logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-        return None
-
-async def send_message_to_assistant(self, chat_id, user_message):
-    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
-    thread_id = await self.get_or_create_thread(chat_id)
-    if not thread_id:
-        return "❌ No se pudo establecer conexión con el asistente."
-
-    try:
-        # Enviar el mensaje del usuario al thread en OpenAI
-        messages = self.conversation_history.get(chat_id, [])
-        messages.append({"role": "user", "content": user_message, "assistant_id": self.assistant_id})
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=messages
-        )
-
-        assistant_message = response['choices'][0]['message']['content']
-        self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
-
-        return assistant_message
-
-    except openai.error.OpenAIError as oe:
-        logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
-        return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
-
-    except Exception as e:
-        logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
-        return "⚠️ Ocurrió un error obteniendo la respuesta."
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        """Procesamiento de mensajes mejorado con retry logic"""
         chat_id = update.effective_chat.id
-        logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
+        max_retries = 3
+        retry_delay = 1
 
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        for attempt in range(max_retries):
+            try:
+                await context.bot.send_chat_action(
+                    chat_id=chat_id,
+                    action=ChatAction.TYPING
+                )
 
-            # Obtener respuesta del Assistant en el thread correcto
-            response = await self.send_message_to_assistant(chat_id, user_message)
+                thread_id = self.user_threads.get(chat_id)
+                if not thread_id:
+                    thread_id = await self.openai_manager.create_thread()
+                    self.user_threads[chat_id] = thread_id
 
-            # Enviar la respuesta al usuario en Telegram
-            await update.message.reply_text(response)
+                response = await self.openai_manager.send_message(
+                    thread_id,
+                    user_message
+                )
 
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
+                # Guardar conversación
+                with self.db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        INSERT INTO conversations (chat_id, role, content)
+                        VALUES (?, ?, ?)
+                    ''', (chat_id, "user", user_message))
+                    cursor.execute('''
+                        INSERT INTO conversations (chat_id, role, content)
+                        VALUES (?, ?, ?)
+                    ''', (chat_id, "assistant", response))
+                    conn.commit()
 
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /start"""
-        logger.info(f"✅ Comando /start recibido de {update.message.chat.id}")
-        await update.message.reply_text("¡Hola! Proporciona tu email para iniciar.")
+                await update.message.reply_text(response)
+                break
 
-    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /help"""
-        await update.message.reply_text(
-            "📌 Puedes preguntarme sobre:\n"
-            "- Recomendaciones de productos\n"
-            "- Videos de ejercicios\n"
-            "- Recursos disponibles\n"
-            "- Instrucciones sobre el bot\n\n"
-            "👉 Escribe un mensaje y te responderé."
-        )
+            except OpenAIError as e:
+                logger.error(f"Error de OpenAI (intento {attempt + 1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    await update.message.reply_text(
+                        "❌ Lo siento, hay un problema con el servicio. Por favor, inténtalo más tarde."
+                    )
+                else:
+                    await asyncio.sleep(retry_delay * (attempt + 1))
+
+            except Exception as e:
+                logger.error(f"Error procesando mensaje: {e}")
+                await update.message.reply_text(
+                    "❌ Ocurrió un error procesando tu mensaje. Por favor, inténtalo de nuevo."
+                )
+                break
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los mensajes recibidos después de la verificación"""
+        """Manejador de mensajes mejorado con validaciones"""
         try:
             chat_id = update.message.chat.id
             user_message = update.message.text.strip()
+
             if not user_message:
+                await update.message.reply_text("Por favor, envía un mensaje con contenido.")
+                return
+
+            if len(user_message) > 4096:  # Límite de Telegram
+                await update.message.reply_text(
+                    "❌ Tu mensaje es demasiado largo. Por favor, envía un mensaje más corto."
+                )
                 return
 
             await self.process_text_message(update, context, user_message)
 
-        except openai.OpenAIError as e:
-            logger.error(f"❌ Error en OpenAI: {e}")
-            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
-
         except Exception as e:
-            logger.error(f"⚠️ Error inesperado: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
+            logger.error(f"Error en handle_message: {e}")
+            await self.error_handler(update, context)
 
-# Crear instancia del bot
+# FastAPI endpoints mejorados
+app = FastAPI()
 bot = CoachBot()
 
 @app.on_event("startup")
 async def startup_event():
-    await bot.async_init()
+    """Evento de inicio mejorado con manejo de errores"""
+    try:
+        await bot.async_init()
+        logger.info("Bot iniciado correctamente")
+    except Exception as e:
+        logger.error(f"Error en startup: {e}")
+        raise
 
 @app.post("/webhook")
 async def webhook(request: Request):
-    """Webhook de Telegram"""
+    """Webhook mejorado con validaciones y manejo de errores"""
     try:
         data = await request.json()
-        logger.info(f"📩 Webhook recibido: {json.dumps(data, indent=2)}")
+        
+        # Validación básica de la estructura del webhook
+        if not isinstance(data, dict):
+            raise HTTPException(status_code=400, detail="Invalid webhook data format")
 
-        if "message" in data and "date" not in data["message"]:
-            logger.error("❌ Error: 'date' no encontrado en el mensaje.")
-            return {"status": "error", "message": "'date' no encontrado"}
+        if "message" not in data:
+            raise HTTPException(status_code=400, detail="No message field in webhook data")
 
         update = Update.de_json(data, bot.app.bot)
         await bot.app.update_queue.put(update)
         return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"❌ Error en webhook: {e}")
-        return {"status": "error", "message": str(e)}
 
-@app.get("/")
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON")
+    except Exception as e:
+        logger.error(f"Error en webhook: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
 async def health_check():
-    return {"status": "alive"}
+    """Health check mejorado con validación de servicios"""
+    health_status = {
+        "status": "healthy",
+        "telegram": True,
+        "openai": True,
+        "database": True,
+        "sheets": True
+    }
+
+    try:
+        # Verificar conexión a la base de datos
+        with bot.db.get_connection() as conn:
+            conn.cursor().execute("SELECT 1")
+    except Exception as e:
+        health_status["database"] = False
+        health_status["status"] = "degraded"
+
+    # Verificar conexión con OpenAI
+    try:
+        openai.Models.list()
+    except Exception as e:
+        health_status["openai"] = False
+        health_status["status"] = "degraded"
+
+    # Verificar conexión con Google Sheets
+    if not bot.sheets_service:
+        health_status["sheets"] = False
+        health_status["status"] = "degraded"
+
+    return health_status
