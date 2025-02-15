@@ -215,7 +215,7 @@ class CoachBot:
 
         try:
             response = openai.Completion.create(
-                model="text-davinci-002",
+                model="text-davinci-003",
                 prompt="Create a new thread",
                 max_tokens=1
             )
@@ -236,7 +236,7 @@ class CoachBot:
         try:
             # Agregar el mensaje del usuario al thread
             message = openai.Completion.create(
-                model="text-davinci-002",
+                model="text-davinci-003",
                 prompt=user_message,
                 max_tokens=150
             )
