@@ -268,7 +268,7 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
         await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
-
+        
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         user_email = update.message.text.strip().lower()
