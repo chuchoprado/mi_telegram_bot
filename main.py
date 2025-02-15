@@ -11,7 +11,7 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import openai
+from openai import OpenAI
 
 # Configurar logging
 logging.basicConfig(
@@ -32,12 +32,12 @@ class CoachBot:
         self.SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
         self.assistant_id = os.getenv('ASSISTANT_ID')
         self.credentials_path = '/etc/secrets/credentials.json'
-        openai.api_key = os.getenv('OPENAI_API_KEY')
+        self.client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
         self.sheets_service = None
         self.started = False
-        self.verified_users = {}  # Diccionario para almacenar usuarios verificados
-        self.conversation_history = {}  # Diccionario para almacenar el historial de conversaciones
-        self.user_threads = {}  # Diccionario para almacenar los threads de los usuarios
+        self.verified_users = {}
+        self.conversation_history = {}
+        self.user_threads = {}
         self.db_path = 'bot_data.db'
         self._init_db()
 
@@ -214,12 +214,8 @@ class CoachBot:
             return self.user_threads[chat_id]
 
         try:
-            response = openai.Completion.create(
-                model="text-davinci-003",
-                prompt="Create a new thread",
-                max_tokens=1
-            )
-            thread_id = response['id']
+            thread = self.client.beta.threads.create()
+            thread_id = thread.id
             self.user_threads[chat_id] = thread_id
             logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
             return thread_id
@@ -234,22 +230,47 @@ class CoachBot:
             return "❌ No se pudo establecer conexión con el asistente."
 
         try:
-            # Agregar el mensaje del usuario al thread
-            message = openai.Completion.create(
-                model="text-davinci-003",
-                prompt=user_message,
-                max_tokens=150
+            # Crear un mensaje en el thread
+            message = self.client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_message
             )
 
-            # Obtener la respuesta del asistente
-            assistant_message = message.choices[0].text.strip()
-            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
+            # Ejecutar el asistente
+            run = self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
 
-            return assistant_message
+            # Esperar la respuesta
+            while True:
+                run_status = self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    return "⚠️ Hubo un problema procesando tu mensaje."
+                await asyncio.sleep(0.5)
 
-        except openai.error.OpenAIError as oe:
-            logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
-            return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
+            # Obtener los mensajes más recientes
+            messages = self.client.beta.threads.messages.list(
+                thread_id=thread_id
+            )
+            
+            # Obtener la última respuesta del asistente
+            for msg in messages.data:
+                if msg.role == "assistant":
+                    assistant_message = msg.content[0].text.value
+                    self.conversation_history.setdefault(chat_id, []).append({
+                        "role": "assistant",
+                        "content": assistant_message
+                    })
+                    return assistant_message
+
+            return "No se recibió respuesta del asistente."
 
         except Exception as e:
             logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
