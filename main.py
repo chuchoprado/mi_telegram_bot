@@ -225,48 +225,51 @@ class CoachBot:
         await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
     
     async def get_or_create_thread(self, chat_id):
-        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-        if chat_id in self.user_threads:
-            return self.user_threads[chat_id]
+    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+    if chat_id in self.user_threads:
+        return self.user_threads[chat_id]
 
-        try:
-            # Crear un nuevo thread correctamente en OpenAI Assistant
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Iniciar nueva conversación"}]
-            )
-            thread_id = response['id']
-            self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
-            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
-            return thread_id
-
-        except Exception as e:
-            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-            return None
-
-    async def send_message_to_assistant(self, chat_id, user_message):
-        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
-        thread_id = await self.get_or_create_thread(chat_id)
+    try:
+        # Crear un nuevo thread correctamente en OpenAI Assistant
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": "Iniciar nueva conversación"}]
+        )
+        thread_id = response.get('id')  # Validate response
         if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+            raise ValueError("No thread ID found in the response")
+        
+        self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
+        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
+        return thread_id
 
-        try:
-            # Enviar el mensaje del usuario al thread en OpenAI
-            messages = self.conversation_history.get(chat_id, [])
-            messages.append({"role": "user", "content": user_message})
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=messages
-            )
+    except Exception as e:
+        logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
+        return None
 
-            assistant_message = response['choices'][0]['message']['content']
-            self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+async def send_message_to_assistant(self, chat_id, user_message):
+    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
+    thread_id = await self.get_or_create_thread(chat_id)
+    if not thread_id:
+        return "❌ No se pudo establecer conexión con el asistente."
 
-            return assistant_message
+    try:
+        # Enviar el mensaje del usuario al thread en OpenAI
+        messages = self.conversation_history.get(chat_id, [])
+        messages.append({"role": "user", "content": user_message})
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=messages
+        )
 
-        except Exception as e:
-            logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
-            return "⚠️ Ocurrió un error obteniendo la respuesta."
+        assistant_message = response['choices'][0]['message']['content']
+        self.conversation_history[chat_id].append({"role": "assistant", "content": assistant_message})
+
+        return assistant_message
+
+    except Exception as e:
+        logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
+        return "⚠️ Ocurrió un error obteniendo la respuesta."
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         chat_id = update.effective_chat.id
