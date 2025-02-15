@@ -99,6 +99,18 @@ class CoachBot:
         conn.commit()
         conn.close()
 
+    def _init_sheets(self):
+        """Inicializa la conexión con Google Sheets"""
+        try:
+            credentials = service_account.Credentials.from_service_account_file(
+                self.credentials_path,
+                scopes=['https://www.googleapis.com/auth/spreadsheets']
+            )
+            self.sheets_service = build('sheets', 'v4', credentials=credentials)
+            logger.info("Conexión con Google Sheets inicializada correctamente.")
+        except Exception as e:
+            logger.error(f"Error inicializando Google Sheets: {e}")
+
     async def async_init(self):
         """Inicialización asíncrona del bot"""
         try:
