@@ -190,6 +190,24 @@ class CoachBot:
                 "❌ Ocurrió un error procesando tu mensaje. Por favor, intenta de nuevo."
             )
 
+    async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja los mensajes recibidos después de la verificación"""
+        try:
+            chat_id = update.message.chat.id
+            user_message = update.message.text.strip()
+            if not user_message:
+                return
+
+            await self.process_text_message(update, context, user_message)
+
+        except openai.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+
+        except Exception as e:
+            logger.error(f"⚠️ Error inesperado: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
+
     async def get_or_create_thread(self, chat_id):
         """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
         if chat_id in self.user_threads:
