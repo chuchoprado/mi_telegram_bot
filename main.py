@@ -209,22 +209,24 @@ class CoachBot:
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def get_or_create_thread(self, chat_id):
-        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-        if chat_id in self.user_threads:
-            return self.user_threads[chat_id]
+    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+    if chat_id in self.user_threads:
+        return self.user_threads[chat_id]
 
-        try:
-            response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Create a new thread"}]
-            )
-            thread_id = response['id']
-            self.user_threads[chat_id] = thread_id
-            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
-            return thread_id
-        except Exception as e:
-            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-            return None
+    try:
+        # Crear un nuevo thread en OpenAI Assistant
+        thread = openai.beta.threads.create()
+        if not thread or not thread.id:
+            raise Exception("OpenAI no devolvió un thread válido.")
+
+        # Guardar el thread_id en el diccionario
+        self.user_threads[chat_id] = thread.id
+        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread.id}")
+        return thread.id
+
+    except Exception as e:
+        logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
+        return None
 
     async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
