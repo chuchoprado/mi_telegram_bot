@@ -208,7 +208,7 @@ class CoachBot:
             logger.error(f"⚠️ Error inesperado: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
-    async def get_or_create_thread(self, chat_id):
+async def get_or_create_thread(self, chat_id):
     """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
     if chat_id in self.user_threads:
         return self.user_threads[chat_id]
@@ -227,6 +227,7 @@ class CoachBot:
     except Exception as e:
         logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
         return None
+    
     async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
         thread_id = await self.get_or_create_thread(chat_id)
