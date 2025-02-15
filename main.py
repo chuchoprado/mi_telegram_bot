@@ -224,39 +224,34 @@ class CoachBot:
         await self.get_or_create_thread(chat_id)  # Asegurar que el usuario tiene un thread
         await self.app.bot.send_message(chat_id=chat_id, text=welcome_message)
     
-    async def get_or_create_thread(self, chat_id):
-        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+   async def get_or_create_thread(self, chat_id):
         if chat_id in self.user_threads:
             return self.user_threads[chat_id]
 
         try:
-            # Crear un nuevo thread correctamente en OpenAI Assistant
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Iniciar nueva conversación"}]
+                messages=[{"role": "system", "content": "Iniciar nueva conversación", "assistant_id": self.assistant_id}]
             )
-            thread_id = response.get('id')  # Validate response
+            thread_id = response.get('id')
             if not thread_id:
                 raise ValueError("No thread ID found in the response")
             
-            self.user_threads[chat_id] = thread_id  # Guardar el thread_id del usuario
+            self.user_threads[chat_id] = thread_id
             logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread_id}")
             return thread_id
 
         except Exception as e:
             logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
             return None
-
-    async def send_message_to_assistant(self, chat_id, user_message):
-        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta con el rol adecuado."""
+async def send_message_to_assistant(self, chat_id, user_message):
         thread_id = await self.get_or_create_thread(chat_id)
         if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
 
         try:
-            # Enviar el mensaje del usuario al thread en OpenAI
             messages = self.conversation_history.get(chat_id, [])
-            messages.append({"role": "user", "content": user_message})
+            messages.append({"role": "user", "content": user_message, "assistant_id": self.assistant_id})
             response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
                 messages=messages
