@@ -13,6 +13,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
 import speech_recognition as sr
+from openai.error import OpenAIError
 
 # Configurar logging
 logging.basicConfig(
@@ -259,7 +260,7 @@ class CoachBot:
             logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
             return None
         
-    async def send_message_to_assistant(self, chat_id, user_message):
+ async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
         thread_id = await self.get_or_create_thread(chat_id)
         if not thread_id:
@@ -278,7 +279,7 @@ class CoachBot:
 
             return assistant_message
 
-        except openai.error.OpenAIError as oe:
+        except OpenAIError as oe:
             logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
             return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
 
