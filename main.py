@@ -12,6 +12,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
+import speech_recognition as sr
 
 # Configurar logging
 logging.basicConfig(
@@ -133,6 +134,10 @@ class CoachBot:
                 filters.TEXT & ~filters.COMMAND,
                 self.route_message
             ))
+            self.app.add_handler(MessageHandler(
+                filters.VOICE,
+                self.handle_voice_message
+            ))
             logger.info("Handlers configurados correctamente")
         except Exception as e:
             logger.error(f"Error en setup_handlers: {e}")
@@ -208,26 +213,52 @@ class CoachBot:
             logger.error(f"⚠️ Error inesperado: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
-async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-    if chat_id in self.user_threads:
-        return self.user_threads[chat_id]
+    async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja los mensajes de voz"""
+        try:
+            chat_id = update.message.chat.id
+            voice_file = await update.message.voice.get_file()
+            voice_file_path = f"{chat_id}_voice_note.ogg"
+            await voice_file.download(voice_file_path)
 
-    try:
-        # Crear un nuevo thread en OpenAI Assistant
-        thread = openai.beta.threads.create()
-        if not thread or not thread.id:
-            raise Exception("OpenAI no devolvió un thread válido.")
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(voice_file_path) as source:
+                audio = recognizer.record(source)
 
-        # Guardar el thread_id en el diccionario
-        self.user_threads[chat_id] = thread.id
-        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread.id}")
-        return thread.id
+            try:
+                user_message = recognizer.recognize_google(audio, language='es-ES')
+                logger.info(f"Transcripción de voz: {user_message}")
+                await self.process_text_message(update, context, user_message)
+            except sr.UnknownValueError:
+                await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
+            except sr.RequestError as e:
+                logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
+                await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
 
-    except Exception as e:
-        logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-        return None
-    
+        except Exception as e:
+            logger.error(f"Error manejando mensaje de voz: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
+
+    async def get_or_create_thread(self, chat_id):
+        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+        if chat_id in self.user_threads:
+            return self.user_threads[chat_id]
+
+        try:
+            # Crear un nuevo thread en OpenAI Assistant
+            thread = openai.beta.threads.create()
+            if not thread or not thread.id:
+                raise Exception("OpenAI no devolvió un thread válido.")
+
+            # Guardar el thread_id en el diccionario
+            self.user_threads[chat_id] = thread.id
+            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread.id}")
+            return thread.id
+
+        except Exception as e:
+            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
+            return None
+        
     async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
         thread_id = await self.get_or_create_thread(chat_id)
@@ -255,20 +286,20 @@ async def get_or_create_thread(self, chat_id):
             logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
             return "⚠️ Ocurrió un error obteniendo la respuesta."
 
-async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-    chat_id = update.effective_chat.id
-    logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        chat_id = update.effective_chat.id
+        logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
 
-    try:
-        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-        response = await self.send_message_to_assistant(chat_id, user_message)
-        await update.message.reply_text(response)
+            response = await self.send_message_to_assistant(chat_id, user_message)
+            await update.message.reply_text(response)
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
-        
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
+            
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         user_email = update.message.text.strip().lower()
