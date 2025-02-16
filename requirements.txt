@@ -65,3 +65,4 @@ fastapi==0.109.2
 uvicorn
 google-api-python-client==2.116.0
 gunicorn
+SpeechRecognition
