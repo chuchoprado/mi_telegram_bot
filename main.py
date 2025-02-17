@@ -279,7 +279,7 @@ class CoachBot:
 
         return assistant_message
 
-    except openai.error.OpenAIError as oe:
+    except OpenAIError as oe:
         logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
         return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
 
