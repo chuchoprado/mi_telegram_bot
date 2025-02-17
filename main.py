@@ -286,7 +286,6 @@ class CoachBot:
     except Exception as e:
         logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
         return "⚠️ Ocurrió un error obteniendo la respuesta."
-
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         chat_id = update.effective_chat.id
         logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
