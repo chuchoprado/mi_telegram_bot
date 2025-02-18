@@ -272,43 +272,91 @@ def _init_sheets(self):
         except Exception as e:
             logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
             return None
-
-    async def send_message_to_assistant(self, chat_id, user_message):
-    thread_id = await self.get_or_create_thread(chat_id)
-    if not thread_id:
-        return "❌ No se pudo establecer conexión con el asistente."
-
+            async def get_conversation_context(self, chat_id, limit=10):
+    """Obtiene las últimas conversaciones para contexto"""
     try:
-        # Crear mensaje en el thread
-        message = openai.beta.threads.messages.create(
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT role, content, timestamp 
+                FROM conversations 
+                WHERE chat_id = ? 
+                ORDER BY timestamp DESC 
+                LIMIT ?
+            ''', (chat_id, limit))
+            return cursor.fetchall()
+    except Exception as e:
+        logger.error(f"Error obteniendo contexto: {e}")
+        return []
+async def save_conversation_history(self, chat_id, role, content):
+    """Guarda el historial de conversación con timestamp"""
+    try:
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
+            cursor.execute('''
+                INSERT INTO conversations 
+                (chat_id, role, content, timestamp) 
+                VALUES (?, ?, ?, ?)
+            ''', (chat_id, role, content, timestamp))
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Error guardando conversación: {e}")
+    
+    async def send_message_to_assistant(self, chat_id, user_message):
+    try:
+        client = openai.Client()
+        thread_id = self.user_threads.get(chat_id)
+        
+        # Si no existe thread para este usuario, crear uno nuevo
+        if not thread_id:
+            thread = client.beta.threads.create()
+            thread_id = thread.id
+            self.user_threads[chat_id] = thread_id
+            logger.info(f"Nuevo thread creado para usuario {chat_id}")
+        
+        # Agregar mensaje al thread
+        message = client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message
         )
         
+        # Guardar en base de datos
+        await self.save_conversation_history(chat_id, "user", user_message)
+        
         # Ejecutar el asistente
-        run = openai.beta.threads.runs.create(
+        run = client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant_id
         )
         
         # Esperar respuesta
         while True:
-            run_status = openai.beta.threads.runs.retrieve(
+            run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run.id
             )
+            
             if run_status.status == 'completed':
-                break
+                messages = client.beta.threads.messages.list(
+                    thread_id=thread_id
+                )
+                if messages.data:
+                    response = messages.data[0].content[0].text.value
+                    # Guardar respuesta en base de datos
+                    await self.save_conversation_history(chat_id, "assistant", response)
+                    return response
+                    
             elif run_status.status in ['failed', 'cancelled', 'expired']:
+                logger.error(f"Error en run: {run_status.status}")
                 return "❌ Error procesando tu mensaje"
+                
             await asyncio.sleep(1)
             
-        # Obtener mensajes
-        messages = openai.beta.threads.messages.list(thread_id=thread_id)
-        assistant_message = messages.data[0].content[0].text.value
-        
-        return assistant_message
+    except Exception as e:
+        logger.error(f"Error en send_message_to_assistant: {e}")
+        return f"❌ Error: {str(e)}"
 
     async def handle_assistant_response(self, assistant_function_call):
         if assistant_function_call['name'] == 'fetch_sheet_data':
