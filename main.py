@@ -260,9 +260,6 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
             return None
-        
- class CoachBot:
-    # ... el resto del código existente ...
 
     async def send_message_to_assistant(self, chat_id, user_message):
         """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
@@ -291,7 +288,7 @@ class CoachBot:
             logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
             return "⚠️ Ocurrió un error obteniendo la respuesta."
 
-     async def handle_assistant_response(self, assistant_function_call):
+    async def handle_assistant_response(self, assistant_function_call):
         if assistant_function_call['name'] == 'fetch_sheet_data':
             query = assistant_function_call['arguments']['query']
             
@@ -315,7 +312,7 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
-            
+
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         user_email = update.message.text.strip().lower()
