@@ -32,23 +32,22 @@ logs = []
 
 class CoachBot:
     def __init__(self):
-        self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-        self.SPREADSHEET_ID = os.getenv('SPREADSHEET_ID')
-        self.assistant_id = os.getenv('ASSISTANT_ID')
-        self.credentials_path = '/etc/secrets/credentials.json'
-        openai.api_key = os.getenv('OPENAI_API_KEY')
-        self.sheets_service = None
-        self.started = False
-        self.verified_users = {}
-        self.conversation_history = {}
-        self.user_threads = {}
-        self.db_path = 'bot_data.db'
-        self._init_db()
-
-        # Inicializar la aplicación de Telegram
-        self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-        self._setup_handlers()
-        self._init_sheets()
+    # Validar variables de entorno críticas
+    required_env_vars = {
+        'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
+        'SPREADSHEET_ID': os.getenv('SPREADSHEET_ID'),
+        'ASSISTANT_ID': os.getenv('ASSISTANT_ID'),
+        'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY')
+    }
+    
+    missing_vars = [var for var, value in required_env_vars.items() if not value]
+    if missing_vars:
+        raise EnvironmentError(f"Faltan variables de entorno requeridas: {', '.join(missing_vars)}")
+        
+    self.TELEGRAM_TOKEN = required_env_vars['TELEGRAM_TOKEN']
+    self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
+    self.assistant_id = required_env_vars['ASSISTANT_ID']
+    openai.api_key = required_env_vars['OPENAI_API_KEY']
 
     def _init_db(self):
         """Inicializa la base de datos SQLite."""
@@ -99,17 +98,33 @@ class CoachBot:
             ''', (chat_id, role, content))
             conn.commit()
 
-    def _init_sheets(self):
-        """Inicializa la conexión con Google Sheets"""
+def _init_sheets(self):
+    try:
+        if not os.path.exists(self.credentials_path):
+            logger.error(f"Archivo de credenciales no encontrado en: {self.credentials_path}")
+            return False
+            
+        credentials = service_account.Credentials.from_service_account_file(
+            self.credentials_path,
+            scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']  # Scope mínimo necesario
+        )
+        
+        self.sheets_service = build('sheets', 'v4', credentials=credentials)
+        
+        # Verificar acceso al spreadsheet
         try:
-            credentials = service_account.Credentials.from_service_account_file(
-                self.credentials_path,
-                scopes=['https://www.googleapis.com/auth/spreadsheets']
-            )
-            self.sheets_service = build('sheets', 'v4', credentials=credentials)
+            self.sheets_service.spreadsheets().get(
+                spreadsheetId=self.SPREADSHEET_ID
+            ).execute()
             logger.info("Conexión con Google Sheets inicializada correctamente.")
+            return True
         except Exception as e:
-            logger.error(f"Error inicializando Google Sheets: {e}")
+            logger.error(f"Error accediendo al spreadsheet: {e}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error inicializando Google Sheets: {e}")
+        return False
 
     async def async_init(self):
         """Inicialización asíncrona del bot"""
@@ -259,31 +274,41 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id, user_message):
-        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
-        thread_id = await self.get_or_create_thread(chat_id)
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+    thread_id = await self.get_or_create_thread(chat_id)
+    if not thread_id:
+        return "❌ No se pudo establecer conexión con el asistente."
 
-        try:
-            # Crear un mensaje en el thread
-            message = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": user_message}]
+    try:
+        # Crear mensaje en el thread
+        message = openai.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
+        
+        # Ejecutar el asistente
+        run = openai.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+        )
+        
+        # Esperar respuesta
+        while True:
+            run_status = openai.beta.threads.runs.retrieve(
+                thread_id=thread_id,
+                run_id=run.id
             )
-
-            # Obtener la respuesta del asistente
-            assistant_message = message.choices[0].message['content'].strip()
-            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
-
-            return assistant_message
-
-        except OpenAIError as oe:
-            logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
-            return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
-
-        except Exception as e:
-            logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
-            return "⚠️ Ocurrió un error obteniendo la respuesta."
+            if run_status.status == 'completed':
+                break
+            elif run_status.status in ['failed', 'cancelled', 'expired']:
+                return "❌ Error procesando tu mensaje"
+            await asyncio.sleep(1)
+            
+        # Obtener mensajes
+        messages = openai.beta.threads.messages.list(thread_id=thread_id)
+        assistant_message = messages.data[0].content[0].text.value
+        
+        return assistant_message
 
     async def handle_assistant_response(self, assistant_function_call):
         if assistant_function_call['name'] == 'fetch_sheet_data':
@@ -335,6 +360,23 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error verificando email para {chat_id}: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+
+async def is_user_whitelisted(self, email: str) -> bool:
+    try:
+        # Obtener lista de emails autorizados desde Google Sheets
+        result = self.sheets_service.spreadsheets().values().get(
+            spreadsheetId=self.SPREADSHEET_ID,
+            range='Usuarios!A:A'  # Ajusta según tu hoja
+        ).execute()
+        
+        values = result.get('values', [])
+        whitelist = [email[0].lower() for email in values if email]  # Normalizar emails
+        
+        return email.lower() in whitelist
+        
+    except Exception as e:
+        logger.error(f"Error verificando whitelist: {e}")
+        return False
 
 # Manejo de errores mejorado para la creación del bot
 try:
