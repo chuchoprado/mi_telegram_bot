@@ -14,6 +14,7 @@ from googleapiclient.discovery import build
 import openai
 import speech_recognition as sr
 from openai.error import OpenAIError
+import requests  # Importa requests para manejar las solicitudes HTTP
 
 # Configurar logging
 logging.basicConfig(
@@ -286,6 +287,18 @@ class CoachBot:
     except Exception as e:
         logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
         return "⚠️ Ocurrió un error obteniendo la respuesta."
+
+     async def handle_assistant_response(self, assistant_function_call):
+        if assistant_function_call['name'] == 'fetch_sheet_data':
+            query = assistant_function_call['arguments']['query']
+            
+            # Realiza la llamada a la API
+            response = requests.get(
+                f"https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec?query={requests.utils.quote(query)}"
+            )
+            
+            return response.json()
+
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         chat_id = update.effective_chat.id
         logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
