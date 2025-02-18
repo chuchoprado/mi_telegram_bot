@@ -15,6 +15,7 @@ import openai
 import speech_recognition as sr
 from openai.error import openaiError
 import requests  # Importa requests para manejar las solicitudes HTTP
+from contextlib import closing
 
 # Configurar logging
 logging.basicConfig(
@@ -51,56 +52,52 @@ class CoachBot:
 
     def _init_db(self):
         """Inicializa la base de datos SQLite."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                chat_id INTEGER PRIMARY KEY,
-                email TEXT,
-                username TEXT
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS conversations (
-                chat_id INTEGER,
-                role TEXT,
-                content TEXT
-            )
-        ''')
-        conn.commit()
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    chat_id INTEGER PRIMARY KEY,
+                    email TEXT,
+                    username TEXT
+                )
+            ''')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS conversations (
+                    chat_id INTEGER,
+                    role TEXT,
+                    content TEXT
+                )
+            ''')
+            conn.commit()
 
     def load_verified_users(self):
         """Carga usuarios validados desde la base de datos."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('SELECT chat_id, email FROM users')
-        rows = cursor.fetchall()
-        for chat_id, email in rows:
-            self.verified_users[chat_id] = email
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT chat_id, email FROM users')
+            rows = cursor.fetchall()
+            for chat_id, email in rows:
+                self.verified_users[chat_id] = email
 
     def save_verified_user(self, chat_id, email, username):
         """Guarda un usuario validado en la base de datos."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT OR REPLACE INTO users (chat_id, email, username)
-            VALUES (?, ?, ?)
-        ''', (chat_id, email, username))
-        conn.commit()
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO users (chat_id, email, username)
+                VALUES (?, ?, ?)
+            ''', (chat_id, email, username))
+            conn.commit()
 
     def save_conversation(self, chat_id, role, content):
         """Guarda un mensaje de conversación en la base de datos."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        cursor.execute('''
-            INSERT INTO conversations (chat_id, role, content)
-            VALUES (?, ?, ?)
-        ''', (chat_id, role, content))
-        conn.commit()
-        conn.close()
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO conversations (chat_id, role, content)
+                VALUES (?, ?, ?)
+            ''', (chat_id, role, content))
+            conn.commit()
 
     def _init_sheets(self):
         """Inicializa la conexión con Google Sheets"""
