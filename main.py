@@ -261,32 +261,35 @@ class CoachBot:
             logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
             return None
         
- async def send_message_to_assistant(self, chat_id, user_message):
-    """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
-    thread_id = await self.get_or_create_thread(chat_id)
-    if not thread_id:
-        return "❌ No se pudo establecer conexión con el asistente."
+ class CoachBot:
+    # ... el resto del código existente ...
 
-    try:
-        # Crear un mensaje en el thread
-        message = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": user_message}]
-        )
+    async def send_message_to_assistant(self, chat_id, user_message):
+        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
+        thread_id = await self.get_or_create_thread(chat_id)
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
 
-        # Obtener la respuesta del asistente
-        assistant_message = message.choices[0].message['content'].strip()
-        self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
+        try:
+            # Crear un mensaje en el thread
+            message = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": user_message}]
+            )
 
-        return assistant_message
+            # Obtener la respuesta del asistente
+            assistant_message = message.choices[0].message['content'].strip()
+            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
 
-    except OpenAIError as oe:
-        logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
-        return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
+            return assistant_message
 
-    except Exception as e:
-        logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
-        return "⚠️ Ocurrió un error obteniendo la respuesta."
+        except OpenAIError as oe:
+            logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
+            return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
+            return "⚠️ Ocurrió un error obteniendo la respuesta."
 
      async def handle_assistant_response(self, assistant_function_call):
         if assistant_function_call['name'] == 'fetch_sheet_data':
