@@ -12,7 +12,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
-from openai import OpenAIError
+from openai.error import OpenAIError
 import speech_recognition as sr
 import requests  # Importa requests para manejar las solicitudes HTTP
 from contextlib import closing
@@ -48,6 +48,9 @@ class CoachBot:
         self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
         self.assistant_id = required_env_vars['ASSISTANT_ID']
         openai.api_key = required_env_vars['OPENAI_API_KEY']
+        
+        # Definir la ruta de credenciales de Google
+        self.credentials_path = '/etc/secrets/credentials.json'
 
         self.sheets_service = None
         self.started = False
@@ -298,13 +301,16 @@ class CoachBot:
 
         try:
             # Crear un mensaje en el thread
-            message = openai.ChatCompletion.create(
+            response = openai.ChatCompletion.create(
                 model="gpt-3.5-turbo",
-                messages=[{"role": "user", "content": user_message}]
+                messages=[
+                    {"role": "system", "content": "Tú eres un asistente útil."},
+                    {"role": "user", "content": user_message}
+                ]
             )
 
             # Obtener la respuesta del asistente
-            assistant_message = message.choices[0].message['content'].strip()
+            assistant_message = response.choices[0].message['content'].strip()
             self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
 
             return assistant_message
