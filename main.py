@@ -12,8 +12,8 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
+from openai import OpenAIError
 import speech_recognition as sr
-from openai.error import OpenAIError
 import requests  # Importa requests para manejar las solicitudes HTTP
 from contextlib import closing
 
