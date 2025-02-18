@@ -12,7 +12,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
-from openai import OpenAIError
+from openai.error import OpenAIError
 import speech_recognition as sr
 import requests  # Importa requests para manejar las solicitudes HTTP
 from contextlib import closing
@@ -32,22 +32,35 @@ logs = []
 
 class CoachBot:
     def __init__(self):
-    # Validar variables de entorno críticas
-    required_env_vars = {
-        'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
-        'SPREADSHEET_ID': os.getenv('SPREADSHEET_ID'),
-        'ASSISTANT_ID': os.getenv('ASSISTANT_ID'),
-        'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY')
-    }
-    
-    missing_vars = [var for var, value in required_env_vars.items() if not value]
-    if missing_vars:
-        raise EnvironmentError(f"Faltan variables de entorno requeridas: {', '.join(missing_vars)}")
+        # Validar variables de entorno críticas
+        required_env_vars = {
+            'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
+            'SPREADSHEET_ID': os.getenv('SPREADSHEET_ID'),
+            'ASSISTANT_ID': os.getenv('ASSISTANT_ID'),
+            'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY')
+        }
         
-    self.TELEGRAM_TOKEN = required_env_vars['TELEGRAM_TOKEN']
-    self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
-    self.assistant_id = required_env_vars['ASSISTANT_ID']
-    openai.api_key = required_env_vars['OPENAI_API_KEY']
+        missing_vars = [var for var, value in required_env_vars.items() if not value]
+        if missing_vars:
+            raise EnvironmentError(f"Faltan variables de entorno requeridas: {', '.join(missing_vars)}")
+            
+        self.TELEGRAM_TOKEN = required_env_vars['TELEGRAM_TOKEN']
+        self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
+        self.assistant_id = required_env_vars['ASSISTANT_ID']
+        openai.api_key = required_env_vars['OPENAI_API_KEY']
+
+        self.sheets_service = None
+        self.started = False
+        self.verified_users = {}
+        self.conversation_history = {}
+        self.user_threads = {}
+        self.db_path = 'bot_data.db'
+        self._init_db()
+
+        # Inicializar la aplicación de Telegram
+        self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
+        self._setup_handlers()
+        self._init_sheets()
 
     def _init_db(self):
         """Inicializa la base de datos SQLite."""
@@ -98,33 +111,34 @@ class CoachBot:
             ''', (chat_id, role, content))
             conn.commit()
 
-def _init_sheets(self):
-    try:
-        if not os.path.exists(self.credentials_path):
-            logger.error(f"Archivo de credenciales no encontrado en: {self.credentials_path}")
-            return False
-            
-        credentials = service_account.Credentials.from_service_account_file(
-            self.credentials_path,
-            scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']  # Scope mínimo necesario
-        )
-        
-        self.sheets_service = build('sheets', 'v4', credentials=credentials)
-        
-        # Verificar acceso al spreadsheet
+    def _init_sheets(self):
+        """Inicializa la conexión con Google Sheets"""
         try:
-            self.sheets_service.spreadsheets().get(
-                spreadsheetId=self.SPREADSHEET_ID
-            ).execute()
-            logger.info("Conexión con Google Sheets inicializada correctamente.")
-            return True
-        except Exception as e:
-            logger.error(f"Error accediendo al spreadsheet: {e}")
-            return False
+            if not os.path.exists(self.credentials_path):
+                logger.error(f"Archivo de credenciales no encontrado en: {self.credentials_path}")
+                return False
+                
+            credentials = service_account.Credentials.from_service_account_file(
+                self.credentials_path,
+                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']  # Scope mínimo necesario
+            )
             
-    except Exception as e:
-        logger.error(f"Error inicializando Google Sheets: {e}")
-        return False
+            self.sheets_service = build('sheets', 'v4', credentials=credentials)
+            
+            # Verificar acceso al spreadsheet
+            try:
+                self.sheets_service.spreadsheets().get(
+                    spreadsheetId=self.SPREADSHEET_ID
+                ).execute()
+                logger.info("Conexión con Google Sheets inicializada correctamente.")
+                return True
+            except Exception as e:
+                logger.error(f"Error accediendo al spreadsheet: {e}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error inicializando Google Sheets: {e}")
+            return False
 
     async def async_init(self):
         """Inicialización asíncrona del bot"""
@@ -219,7 +233,7 @@ def _init_sheets(self):
 
             await self.process_text_message(update, context, user_message)
 
-        except openai.OpenAIError as e:
+        except OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
             await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
@@ -260,7 +274,10 @@ def _init_sheets(self):
 
         try:
             # Crear un nuevo thread en OpenAI Assistant
-            thread = openai.beta.threads.create()
+            thread = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
+            )
             if not thread or not thread.id:
                 raise Exception("OpenAI no devolvió un thread válido.")
 
@@ -272,91 +289,33 @@ def _init_sheets(self):
         except Exception as e:
             logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
             return None
-            async def get_conversation_context(self, chat_id, limit=10):
-    """Obtiene las últimas conversaciones para contexto"""
-    try:
-        with closing(sqlite3.connect(self.db_path)) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT role, content, timestamp 
-                FROM conversations 
-                WHERE chat_id = ? 
-                ORDER BY timestamp DESC 
-                LIMIT ?
-            ''', (chat_id, limit))
-            return cursor.fetchall()
-    except Exception as e:
-        logger.error(f"Error obteniendo contexto: {e}")
-        return []
-async def save_conversation_history(self, chat_id, role, content):
-    """Guarda el historial de conversación con timestamp"""
-    try:
-        with closing(sqlite3.connect(self.db_path)) as conn:
-            cursor = conn.cursor()
-            timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
-            cursor.execute('''
-                INSERT INTO conversations 
-                (chat_id, role, content, timestamp) 
-                VALUES (?, ?, ?, ?)
-            ''', (chat_id, role, content, timestamp))
-            conn.commit()
-    except Exception as e:
-        logger.error(f"Error guardando conversación: {e}")
-    
+
     async def send_message_to_assistant(self, chat_id, user_message):
-    try:
-        client = openai.Client()
-        thread_id = self.user_threads.get(chat_id)
-        
-        # Si no existe thread para este usuario, crear uno nuevo
+        """Envía un mensaje al asistente en el thread correcto y obtiene la respuesta."""
+        thread_id = await self.get_or_create_thread(chat_id)
         if not thread_id:
-            thread = client.beta.threads.create()
-            thread_id = thread.id
-            self.user_threads[chat_id] = thread_id
-            logger.info(f"Nuevo thread creado para usuario {chat_id}")
-        
-        # Agregar mensaje al thread
-        message = client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-        
-        # Guardar en base de datos
-        await self.save_conversation_history(chat_id, "user", user_message)
-        
-        # Ejecutar el asistente
-        run = client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-        
-        # Esperar respuesta
-        while True:
-            run_status = client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
+            return "❌ No se pudo establecer conexión con el asistente."
+
+        try:
+            # Crear un mensaje en el thread
+            message = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "user", "content": user_message}]
             )
-            
-            if run_status.status == 'completed':
-                messages = client.beta.threads.messages.list(
-                    thread_id=thread_id
-                )
-                if messages.data:
-                    response = messages.data[0].content[0].text.value
-                    # Guardar respuesta en base de datos
-                    await self.save_conversation_history(chat_id, "assistant", response)
-                    return response
-                    
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                logger.error(f"Error en run: {run_status.status}")
-                return "❌ Error procesando tu mensaje"
-                
-            await asyncio.sleep(1)
-            
-    except Exception as e:
-        logger.error(f"Error en send_message_to_assistant: {e}")
-        return f"❌ Error: {str(e)}"
+
+            # Obtener la respuesta del asistente
+            assistant_message = message.choices[0].message['content'].strip()
+            self.conversation_history.setdefault(chat_id, []).append({"role": "assistant", "content": assistant_message})
+
+            return assistant_message
+
+        except OpenAIError as oe:
+            logger.error(f"❌ Error en OpenAI para {chat_id}: {oe}")
+            return "⚠️ Ocurrió un error obteniendo la respuesta de OpenAI."
+
+        except Exception as e:
+            logger.error(f"❌ Error enviando mensaje al asistente para {chat_id}: {e}")
+            return "⚠️ Ocurrió un error obteniendo la respuesta."
 
     async def handle_assistant_response(self, assistant_function_call):
         if assistant_function_call['name'] == 'fetch_sheet_data':
@@ -409,22 +368,22 @@ async def save_conversation_history(self, chat_id, role, content):
             logger.error(f"❌ Error verificando email para {chat_id}: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
 
-async def is_user_whitelisted(self, email: str) -> bool:
-    try:
-        # Obtener lista de emails autorizados desde Google Sheets
-        result = self.sheets_service.spreadsheets().values().get(
-            spreadsheetId=self.SPREADSHEET_ID,
-            range='Usuarios!A:A'  # Ajusta según tu hoja
-        ).execute()
-        
-        values = result.get('values', [])
-        whitelist = [email[0].lower() for email in values if email]  # Normalizar emails
-        
-        return email.lower() in whitelist
-        
-    except Exception as e:
-        logger.error(f"Error verificando whitelist: {e}")
-        return False
+    async def is_user_whitelisted(self, email: str) -> bool:
+        try:
+            # Obtener lista de emails autorizados desde Google Sheets
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.SPREADSHEET_ID,
+                range='Usuarios!A:A'  # Ajusta según tu hoja
+            ).execute()
+            
+            values = result.get('values', [])
+            whitelist = [email[0].lower() for email in values if email]  # Normalizar emails
+            
+            return email.lower() in whitelist
+            
+        except Exception as e:
+            logger.error(f"Error verificando whitelist: {e}")
+            return False
 
 # Manejo de errores mejorado para la creación del bot
 try:
