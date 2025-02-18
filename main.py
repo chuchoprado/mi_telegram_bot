@@ -13,7 +13,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 import openai
 import speech_recognition as sr
-from openai.error import openaiError
+from openai.error import OpenAIError
 import requests  # Importa requests para manejar las solicitudes HTTP
 from contextlib import closing
 
