@@ -407,10 +407,11 @@ class CoachBot:
 
         try:
             # Crear un nuevo thread en OpenAI Assistant
-            thread = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
-            )
+           response = openai.ChatCompletion.create(
+    model="gpt-3.5-turbo",
+    messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
+)
+thread = response['choices'][0]['message']
             if not thread or not thread.id:
                 raise Exception("OpenAI no devolvió un thread válido.")
 
