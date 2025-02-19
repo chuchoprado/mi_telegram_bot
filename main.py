@@ -3,6 +3,7 @@ import asyncio
 import io
 import sqlite3
 import json
+import openai
 import logging
 import time
 from fastapi import FastAPI, Request
