@@ -46,7 +46,7 @@ class CoachBot:
         self.assistant_id = required_env_vars['ASSISTANT_ID']
         
         # Initialize AsyncOpenAI client
-        self.client = AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
+        self.client = openai.AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
         
         self.sheets_service = None
         self.started = False
@@ -93,11 +93,20 @@ async def get_or_create_thread(self, chat_id):
 
     try:
         # Crear un nuevo thread en OpenAI Assistant
-        response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
-        )
-        thread = response['choices'][0]['message']
+       response = await self.client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
+)
+
+if 'choices' in response and response.choices:
+    thread = response.choices[0].message
+    if not thread or not hasattr(thread, "id"):
+        raise Exception("OpenAI no devolvió un thread válido.")
+    self.user_threads[chat_id] = thread.id
+    return thread.id
+else:
+    raise Exception("Error al obtener el thread de OpenAI.")
+
         if not thread or not thread['id']:
             raise Exception("OpenAI no devolvió un thread válido.")
 
@@ -132,10 +141,14 @@ async def get_or_create_thread(self, chat_id):
 
             # Esperar la respuesta
             while True:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
+                try:
+    run_status = await self.client.beta.threads.runs.retrieve(
+        thread_id=thread_id,
+        run_id=run.id
+    )
+except Exception as e:
+    logger.error(f"❌ Error recuperando el estado del run: {e}")
+    return "⚠️ Hubo un problema al obtener la respuesta del asistente."
                 
                 if run_status.status == 'completed':
                     break
@@ -531,7 +544,14 @@ async def webhook(request: Request):
             logger.error("❌ Error: 'date' no encontrado en el mensaje.")
             return {"status": "error", "message": "'date' no encontrado"}
 
-        update = Update.de_json(data, bot.app.bot)
+try:
+    update = Update.de_json(data, bot.app.bot)
+    await bot.app.update_queue.put(update)
+    return {"status": "ok"}
+except Exception as e:
+    logger.error(f"❌ Error procesando webhook: {e}")
+    return {"status": "error", "message": str(e)}
+
         await bot.app.update_queue.put(update)
         return {"status": "ok"}
     except Exception as e:
@@ -541,3 +561,9 @@ async def webhook(request: Request):
 @app.get("/")
 async def health_check():
     return {"status": "alive"}
+
+port = int(os.getenv("PORT", 8000))  # Usa 8000 por defecto si PORT no está definido
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=port)
