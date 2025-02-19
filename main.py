@@ -93,27 +93,19 @@ async def get_or_create_thread(self, chat_id):
 
     try:
         # Crear un nuevo thread en OpenAI Assistant
-       response = await self.client.chat.completions.create(
-    model="gpt-3.5-turbo",
-    messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
-)
+        response = await self.client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
+        )
 
-if 'choices' in response and response.choices:
-    thread = response.choices[0].message
-    if not thread or not hasattr(thread, "id"):
-        raise Exception("OpenAI no devolvió un thread válido.")
-    self.user_threads[chat_id] = thread.id
-    return thread.id
-else:
-    raise Exception("Error al obtener el thread de OpenAI.")
-
-        if not thread or not thread['id']:
-            raise Exception("OpenAI no devolvió un thread válido.")
-
-        # Guardar el thread_id en el diccionario
-        self.user_threads[chat_id] = thread['id']
-        logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread['id']}")
-        return thread['id']
+        if 'choices' in response and response.choices:
+            thread = response.choices[0].message
+            if not thread or not hasattr(thread, "id"):
+                raise Exception("OpenAI no devolvió un thread válido.")
+            self.user_threads[chat_id] = thread.id
+            return thread.id
+        else:
+            raise Exception("Error al obtener el thread de OpenAI.")
 
     except Exception as e:
         logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
