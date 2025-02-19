@@ -58,32 +58,38 @@ class CoachBot:
         self.conversation_history = {}
         self.user_threads = {}
         self.db_path = 'bot_data.db'
-        self._init_db()
-
-        # Inicializar la aplicación de Telegram
+        
+        # Initialize the application before setting up handlers
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-        self._setup_handlers()
+        
+        # Initialize database first
+        self._init_db()
+        
+        # Setup handlers after initializing the application
+        self.setup_handlers()
+        
+        # Initialize Google Sheets
         self._init_sheets()
 
-    def _init_db(self):
-        """Inicializa la base de datos SQLite."""
-        with closing(sqlite3.connect(self.db_path)) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    chat_id INTEGER PRIMARY KEY,
-                    email TEXT,
-                    username TEXT
-                )
-            ''')
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS conversations (
-                    chat_id INTEGER,
-                    role TEXT,
-                    content TEXT
-                )
-            ''')
-            conn.commit()
+    def setup_handlers(self):
+        """Configura los manejadores de comandos y mensajes"""
+        try:
+            self.app.add_handler(CommandHandler("start", self.start_command))
+            self.app.add_handler(CommandHandler("help", self.help_command))
+            self.app.add_handler(MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                self.route_message
+            ))
+            self.app.add_handler(MessageHandler(
+                filters.VOICE,
+                self.handle_voice_message
+            ))
+            logger.info("Handlers configurados correctamente")
+        except Exception as e:
+            logger.error(f"Error en setup_handlers: {e}")
+            raise
+
+    # Rest of the class implementation remains the same...
 
     def load_verified_users(self):
         """Carga usuarios validados desde la base de datos."""
