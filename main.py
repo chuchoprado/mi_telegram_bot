@@ -57,9 +57,33 @@ class CoachBot:
         # Initialize the application
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         
-        self._init_db()
+        self._init_db()  # Initialize the database
         self.setup_handlers()
         self._init_sheets()
+
+    def _init_db(self):
+        """Initialize the database and create necessary tables."""
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            # Create users table if it doesn't exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    chat_id INTEGER PRIMARY KEY,
+                    email TEXT NOT NULL UNIQUE,
+                    username TEXT
+                )
+            ''')
+            # Create conversations table if it doesn't exist
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    role TEXT,
+                    content TEXT,
+                    FOREIGN KEY (chat_id) REFERENCES users (chat_id)
+                )
+            ''')
+            conn.commit()
 
     async def get_or_create_thread(self, chat_id: int) -> str:
         """Obtiene un thread existente o crea uno nuevo para el Assistant."""
