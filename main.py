@@ -105,10 +105,13 @@ class CoachBot:
                 self.user_threads[chat_id] = thread.id
                 return thread.id
             else:
-                raise Exception("Error al obtener el thread de OpenAI.")
+                raise Exception("Error al obtener el thread de OpenAI. Respuesta: " + str(response))
 
+        except openai.error.OpenAIError as e:
+            logger.error(f"❌ Error de OpenAI creando thread para {chat_id}: {e}")
+            return None
         except Exception as e:
-            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
+            logger.error(f"❌ Error inesperado creando thread en OpenAI para {chat_id}: {e}")
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
@@ -138,8 +141,11 @@ class CoachBot:
                         thread_id=thread_id,
                         run_id=run.id
                     )
+                except openai.error.OpenAIError as e:
+                    logger.error(f"❌ Error de OpenAI recuperando el estado del run: {e}")
+                    return "⚠️ Hubo un problema al obtener la respuesta del asistente."
                 except Exception as e:
-                    logger.error(f"❌ Error recuperando el estado del run: {e}")
+                    logger.error(f"❌ Error inesperado recuperando el estado del run: {e}")
                     return "⚠️ Hubo un problema al obtener la respuesta del asistente."
 
                 if run_status.status == 'completed':
@@ -167,8 +173,11 @@ class CoachBot:
 
             return assistant_message
 
+        except openai.error.OpenAIError as e:
+            logger.error(f"❌ Error de OpenAI procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
         except Exception as e:
-            logger.error(f"❌ Error con el Assistant: {e}")
+            logger.error(f"❌ Error inesperado procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
@@ -343,7 +352,7 @@ class CoachBot:
 
             await self.process_text_message(update, context, user_message)
 
-        except OpenAIError as e:
+        except openai.error.OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
             await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
