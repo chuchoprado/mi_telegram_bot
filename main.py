@@ -44,6 +44,7 @@ class CoachBot:
         self.TELEGRAM_TOKEN = required_env_vars['TELEGRAM_TOKEN']
         self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
         self.assistant_id = required_env_vars['ASSISTANT_ID']
+        self.credentials_path = 'path/to/credentials.json'  # Asegúrate de establecer esta ruta correctamente
         
         # Inicializar cliente AsyncOpenAI
         self.client = openai.AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
