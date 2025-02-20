@@ -92,7 +92,6 @@ async def get_or_create_thread(self, chat_id):
         return self.user_threads[chat_id]
 
     try:
-        # Crear un nuevo thread en OpenAI Assistant
         response = await self.client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
@@ -110,7 +109,7 @@ async def get_or_create_thread(self, chat_id):
     except Exception as e:
         logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
         return None
-        
+
 async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
     """Envía un mensaje al Assistant y espera su respuesta."""
     thread_id = await self.get_or_create_thread(chat_id)
