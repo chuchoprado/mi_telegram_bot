@@ -12,7 +12,7 @@ from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from openai import AsyncOpenAI  # Updated to async client
+from openai import AsyncOpenAI
 import speech_recognition as sr
 import requests
 from contextlib import closing
@@ -45,7 +45,7 @@ class CoachBot:
         self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
         self.assistant_id = required_env_vars['ASSISTANT_ID']
         
-        # Initialize AsyncOpenAI client
+        # Inicializar cliente AsyncOpenAI
         self.client = openai.AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
         
         self.sheets_service = None
@@ -55,18 +55,18 @@ class CoachBot:
         self.user_threads = {}
         self.db_path = 'bot_data.db'
         
-        # Initialize the application
+        # Inicializar la aplicación
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         
-        self._init_db()  # Initialize the database
+        self._init_db()  # Inicializar la base de datos
         self.setup_handlers()
         self._init_sheets()
 
     def _init_db(self):
-        """Initialize the database and create necessary tables."""
+        """Inicializar la base de datos y crear las tablas necesarias."""
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
-            # Create users table if it doesn't exist
+            # Crear tabla de usuarios si no existe
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     chat_id INTEGER PRIMARY KEY,
@@ -74,7 +74,7 @@ class CoachBot:
                     username TEXT
                 )
             ''')
-            # Create conversations table if it doesn't exist
+            # Crear tabla de conversaciones si no existe
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -86,89 +86,89 @@ class CoachBot:
             ''')
             conn.commit()
 
-async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-    if chat_id in self.user_threads:
-        return self.user_threads[chat_id]
+    async def get_or_create_thread(self, chat_id):
+        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+        if chat_id in self.user_threads:
+            return self.user_threads[chat_id]
 
-    try:
-        response = await self.client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
-        )
+        try:
+            response = await self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
+            )
 
-        if 'choices' in response and response.choices:
-            thread = response.choices[0].message
-            if not thread or not hasattr(thread, "id"):
-                raise Exception("OpenAI no devolvió un thread válido.")
-            self.user_threads[chat_id] = thread.id
-            return thread.id
-        else:
-            raise Exception("Error al obtener el thread de OpenAI.")
+            if 'choices' in response and response.choices:
+                thread = response.choices[0].message
+                if not thread or not hasattr(thread, "id"):
+                    raise Exception("OpenAI no devolvió un thread válido.")
+                self.user_threads[chat_id] = thread.id
+                return thread.id
+            else:
+                raise Exception("Error al obtener el thread de OpenAI.")
 
-    except Exception as e:
-        logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-        return None
+        except Exception as e:
+            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
+            return None
 
-async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    """Envía un mensaje al Assistant y espera su respuesta."""
-    thread_id = await self.get_or_create_thread(chat_id)
-    if not thread_id:
-        return "❌ No se pudo establecer conexión con el asistente."
+    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        """Envía un mensaje al Assistant y espera su respuesta."""
+        thread_id = await self.get_or_create_thread(chat_id)
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
 
-    try:
-        # Crear mensaje en el thread
-        await self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
+        try:
+            # Crear mensaje en el thread
+            await self.client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_message
+            )
 
-        # Crear y ejecutar el run
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
+            # Crear y ejecutar el run
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
 
-        # Esperar la respuesta
-        while True:
-            try:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
-            except Exception as e:
-                logger.error(f"❌ Error recuperando el estado del run: {e}")
-                return "⚠️ Hubo un problema al obtener la respuesta del asistente."
+            # Esperar la respuesta
+            while True:
+                try:
+                    run_status = await self.client.beta.threads.runs.retrieve(
+                        thread_id=thread_id,
+                        run_id=run.id
+                    )
+                except Exception as e:
+                    logger.error(f"❌ Error recuperando el estado del run: {e}")
+                    return "⚠️ Hubo un problema al obtener la respuesta del asistente."
 
-            if run_status.status == 'completed':
-                break
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                raise Exception(f"Run failed with status: {run_status.status}")
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    raise Exception(f"Run failed with status: {run_status.status}")
 
-            await asyncio.sleep(1)
+                await asyncio.sleep(1)
 
-        # Obtener mensajes más recientes
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+            # Obtener mensajes más recientes
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
 
-        # Extraer la respuesta del asistente
-        assistant_message = messages.data[0].content[0].text.value
+            # Extraer la respuesta del asistente
+            assistant_message = messages.data[0].content[0].text.value
 
-        # Guardar en el historial
-        self.conversation_history.setdefault(chat_id, []).append({
-            "role": "assistant",
-            "content": assistant_message
-        })
+            # Guardar en el historial
+            self.conversation_history.setdefault(chat_id, []).append({
+                "role": "assistant",
+                "content": assistant_message
+            })
 
-        return assistant_message
+            return assistant_message
 
-    except Exception as e:
-        logger.error(f"❌ Error con el Assistant: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+        except Exception as e:
+            logger.error(f"❌ Error con el Assistant: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
@@ -191,24 +191,6 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
                 "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
             )
 
-    # ... (resto de los métodos de la clase permanecen igual)
-
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-        chat_id = update.effective_chat.id
-        logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
-
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-            response = await self.send_message_to_assistant(chat_id, user_message)
-            await update.message.reply_text(response)
-
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
-
-    # ... (rest of the class implementation remains the same)
-
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
         try:
@@ -226,8 +208,6 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
         except Exception as e:
             logger.error(f"Error en setup_handlers: {e}")
             raise
-
-    # Rest of the class implementation remains the same...
 
     def load_verified_users(self):
         """Carga usuarios validados desde la base de datos."""
@@ -298,24 +278,6 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
             logger.info("Bot inicializado correctamente")
         except Exception as e:
             logger.error(f"Error en async_init: {e}")
-            raise
-
-    def _setup_handlers(self):
-        """Configura los manejadores de comandos y mensajes"""
-        try:
-            self.app.add_handler(CommandHandler("start", self.start_command))
-            self.app.add_handler(CommandHandler("help", self.help_command))
-            self.app.add_handler(MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                self.route_message
-            ))
-            self.app.add_handler(MessageHandler(
-                filters.VOICE,
-                self.handle_voice_message
-            ))
-            logger.info("Handlers configurados correctamente")
-        except Exception as e:
-            logger.error(f"Error en setup_handlers: {e}")
             raise
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -414,56 +376,6 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
             logger.error(f"Error manejando mensaje de voz: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
 
-    async def get_or_create_thread(self, chat_id):
-        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-        if chat_id in self.user_threads:
-            return self.user_threads[chat_id]
-
-        try:
-            # Crear un nuevo thread en OpenAI Assistant
-           response = openai.ChatCompletion.create(
-    model="gpt-3.5-turbo",
-    messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
-)
-thread = response['choices'][0]['message']
-            if not thread or not thread.id:
-                raise Exception("OpenAI no devolvió un thread válido.")
-
-            # Guardar el thread_id en el diccionario
-            self.user_threads[chat_id] = thread.id
-            logger.info(f"🧵 Nuevo thread creado para {chat_id}: {thread.id}")
-            return thread.id
-
-        except Exception as e:
-            logger.error(f"❌ Error creando thread en OpenAI para {chat_id}: {e}")
-            return None
-
-    
-    async def handle_assistant_response(self, assistant_function_call):
-        if assistant_function_call['name'] == 'fetch_sheet_data':
-            query = assistant_function_call['arguments']['query']
-            
-            # Realiza la llamada a la API
-            response = requests.get(
-                f"https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec?query={requests.utils.quote(query)}"
-            )
-            
-            return response.json()
-
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-        chat_id = update.effective_chat.id
-        logger.info(f"📩 Mensaje recibido del usuario: {user_message}")
-
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-            response = await self.send_message_to_assistant(chat_id, user_message)
-            await update.message.reply_text(response)
-
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje con OpenAI: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error obteniendo la respuesta.")
-
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         user_email = update.message.text.strip().lower()
@@ -535,18 +447,11 @@ async def webhook(request: Request):
             logger.error("❌ Error: 'date' no encontrado en el mensaje.")
             return {"status": "error", "message": "'date' no encontrado"}
 
-try:
-    update = Update.de_json(data, bot.app.bot)
-    await bot.app.update_queue.put(update)
-    return {"status": "ok"}
-except Exception as e:
-    logger.error(f"❌ Error procesando webhook: {e}")
-    return {"status": "error", "message": str(e)}
-
+        update = Update.de_json(data, bot.app.bot)
         await bot.app.update_queue.put(update)
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"❌ Error en webhook: {e}")
+        logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
 
 @app.get("/")
