@@ -3,7 +3,6 @@ import asyncio
 import io
 import sqlite3
 import json
-import openai
 import logging
 import time
 from fastapi import FastAPI, Request
@@ -44,10 +43,10 @@ class CoachBot:
         self.TELEGRAM_TOKEN = required_env_vars['TELEGRAM_TOKEN']
         self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
         self.assistant_id = required_env_vars['ASSISTANT_ID']
-        self.credentials_path = 'path/to/credentials.json'  # Asegúrate de establecer esta ruta correctamente
+        self.credentials_path = 'path/to/credentials.json'
         
         # Inicializar cliente AsyncOpenAI
-        self.client = openai.AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
+        self.client = AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
         
         self.sheets_service = None
         self.started = False
@@ -59,7 +58,7 @@ class CoachBot:
         # Inicializar la aplicación
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         
-        self._init_db()  # Inicializar la base de datos
+        self._init_db()
         self.setup_handlers()
         self._init_sheets()
 
@@ -67,7 +66,6 @@ class CoachBot:
         """Inicializar la base de datos y crear las tablas necesarias."""
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
-            # Crear tabla de usuarios si no existe
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     chat_id INTEGER PRIMARY KEY,
@@ -75,7 +73,6 @@ class CoachBot:
                     username TEXT
                 )
             ''')
-            # Crear tabla de conversaciones si no existe
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,94 +90,71 @@ class CoachBot:
             return self.user_threads[chat_id]
 
         try:
-            response = await self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[{"role": "system", "content": "Nuevo thread iniciado."}]
+            # Crear un nuevo thread usando la API actualizada
+            thread = await self.client.beta.threads.create()
+            self.user_threads[chat_id] = thread.id
+            return thread.id
+
+        except Exception as e:
+            logger.error(f"❌ Error creando thread para {chat_id}: {e}")
+            return None
+
+    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        try:
+            thread_id = await self.get_or_create_thread(chat_id)
+            if not thread_id:
+                return "❌ No se pudo establecer conexión con el asistente."
+
+            # Crear mensaje en el thread usando la API actualizada
+            await self.client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_message
             )
 
-            if 'choices' in response and response.choices:
-                thread = response.choices[0].message
-                if not thread or not hasattr(thread, "id"):
-                    raise Exception("OpenAI no devolvió un thread válido.")
-                self.user_threads[chat_id] = thread.id
-                return thread.id
-            else:
-                raise Exception("Error al obtener el thread de OpenAI. Respuesta: " + str(response))
+            # Crear y ejecutar el run
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
 
-        except openai.error.OpenAIError as e:
-            logger.error(f"❌ Error de OpenAI creando thread para {chat_id}: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"❌ Error inesperado creando thread en OpenAI para {chat_id}: {e}")
-            return None
-
-       # Ejemplo de manejo de errores más específico y detallado
-    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    try:
-        thread_id = await self.get_or_create_thread(chat_id)
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
-
-        # Crear mensaje en el thread
-        await self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-
-        # Crear y ejecutar el run
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-
-        # Esperar la respuesta
-        while True:
-            try:
+            # Esperar la respuesta
+            while True:
                 run_status = await self.client.beta.threads.runs.retrieve(
                     thread_id=thread_id,
                     run_id=run.id
                 )
-            except openai.error.OpenAIError as e:
-                logger.error(f"❌ Error de OpenAI recuperando el estado del run: {e}")
-                return "⚠️ Hubo un problema al obtener la respuesta del asistente."
-            except Exception as e:
-                logger.error(f"❌ Error inesperado recuperando el estado del run: {e}")
-                return "⚠️ Hubo un problema al obtener la respuesta del asistente."
 
-            if run_status.status == 'completed':
-                break
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                raise Exception(f"Run failed with status: {run_status.status}")
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    raise Exception(f"Run failed with status: {run_status.status}")
 
-            await asyncio.sleep(1)
+                await asyncio.sleep(1)
 
-        # Obtener mensajes más recientes
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+            # Obtener mensajes más recientes
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
 
-        # Extraer la respuesta del asistente
-        assistant_message = messages.data[0].content[0].text.value
+            # Extraer la respuesta del asistente
+            assistant_message = messages.data[0].content[0].text.value
 
-        # Guardar en el historial
-        self.conversation_history.setdefault(chat_id, []).append({
-            "role": "assistant",
-            "content": assistant_message
-        })
+            # Guardar en el historial
+            self.conversation_history.setdefault(chat_id, []).append({
+                "role": "assistant",
+                "content": assistant_message
+            })
 
-        return assistant_message
+            return assistant_message
 
-    except openai.error.OpenAIError as e:
-        logger.error(f"❌ Error de OpenAI procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
-    except Exception as e:
-        logger.error(f"❌ Error inesperado procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
         chat_id = update.effective_chat.id
         logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
@@ -372,64 +346,7 @@ class CoachBot:
             with sr.AudioFile(voice_file_path) as source:
                 audio = recognizer.record(source)
 
-            try:
-                user_message = recognizer.recognize_google(audio, language='es-ES')
-                logger.info(f"Transcripción de voz: {user_message}")
-                await self.process_text_message(update, context, user_message)
-            except sr.UnknownValueError:
-                await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
-            except sr.RequestError as e:
-                logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
-                await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
-
-        except Exception as e:
-            logger.error(f"Error manejando mensaje de voz: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
-
-    async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        chat_id = update.message.chat.id
-        user_email = update.message.text.strip().lower()
-        username = update.message.from_user.username or "Unknown"
-
-        if not '@' in user_email or not '.' in user_email:
-            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
-            return
-
-        try:
-            if not await self.is_user_whitelisted(user_email):
-                await update.message.reply_text(
-                    "❌ Tu email no está en la lista autorizada. Contacta a soporte."
-                )
-                return
-
-            thread_id = await self.get_or_create_thread(chat_id)
-            self.user_threads[chat_id] = thread_id
-
-            self.save_verified_user(chat_id, user_email, username)
-            await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
-
-        except Exception as e:
-            logger.error(f"❌ Error verificando email para {chat_id}: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
-
-    async def is_user_whitelisted(self, email: str) -> bool:
-        try:
-            # Obtener lista de emails autorizados desde Google Sheets
-            result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range='Usuarios!A:A'  # Ajusta según tu hoja
-            ).execute()
-            
-            values = result.get('values', [])
-            whitelist = [email[0].lower() for email in values if email]  # Normalizar emails
-            
-            return email.lower() in whitelist
-            
-        except Exception as e:
-            logger.error(f"Error verificando whitelist: {e}")
-            return False
-
-# Manejo de errores mejorado para la creación del bot
+# Instanciar el bot
 try:
     bot = CoachBot()
 except Exception as e:
@@ -451,12 +368,6 @@ async def webhook(request: Request):
     """Webhook de Telegram"""
     try:
         data = await request.json()
-        logger.info(f"📩 Webhook recibido: {json.dumps(data, indent=2)}")
-
-        if "message" in data and "date" not in data["message"]:
-            logger.error("❌ Error: 'date' no encontrado en el mensaje.")
-            return {"status": "error", "message": "'date' no encontrado"}
-
         update = Update.de_json(data, bot.app.bot)
         await bot.app.update_queue.put(update)
         return {"status": "ok"}
@@ -468,8 +379,6 @@ async def webhook(request: Request):
 async def health_check():
     return {"status": "alive"}
 
-port = int(os.getenv("PORT", 8000))  # Usa 8000 por defecto si PORT no está definido
-
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
