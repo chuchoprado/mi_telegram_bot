@@ -5,6 +5,7 @@ import io
 import sqlite3
 import json
 import logging
+import openai
 import time
 from fastapi import FastAPI, Request
 from telegram import Update
@@ -160,12 +161,17 @@ class CoachBot:
 
             await update.message.reply_text(response)
 
+        except openai.error.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+
         except Exception as e:
             logger.error(f"❌ Error procesando mensaje: {e}")
             await update.message.reply_text(
                 "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
             )
 
+# Resto del código...
     async def fetch_products(self, query):
         url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
         params = {"query": query}
