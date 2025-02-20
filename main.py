@@ -181,6 +181,9 @@ class CoachBot:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, params=params)
+                if response.status_code == 302:
+                    new_url = response.headers.get('Location')
+                    response = await client.get(new_url)
 
             logger.info(f"Respuesta de Google Sheets: {response.text}")
             return response.json()
