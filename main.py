@@ -18,7 +18,7 @@ from contextlib import closing
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -35,29 +35,29 @@ class CoachBot:
             'ASSISTANT_ID': os.getenv('ASSISTANT_ID'),
             'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY')
         }
-        
+
         missing_vars = [var for var, value in required_env_vars.items() if not value]
         if missing_vars:
             raise EnvironmentError(f"Faltan variables de entorno requeridas: {', '.join(missing_vars)}")
-            
+
         self.TELEGRAM_TOKEN = required_env_vars['TELEGRAM_TOKEN']
         self.SPREADSHEET_ID = required_env_vars['SPREADSHEET_ID']
         self.assistant_id = required_env_vars['ASSISTANT_ID']
-        self.credentials_path = 'path/to/credentials.json'
-        
+        self.credentials_path = '/etc/secrets/credentials.json'
+
         # Inicializar cliente AsyncOpenAI
         self.client = AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
-        
+
         self.sheets_service = None
         self.started = False
         self.verified_users = {}
         self.conversation_history = {}
         self.user_threads = {}
         self.db_path = 'bot_data.db'
-        
+
         # Inicializar la aplicación
         self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-        
+
         self._init_db()
         self.setup_handlers()
         self._init_sheets()
@@ -156,7 +156,7 @@ class CoachBot:
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
             response = await self.send_message_to_assistant(chat_id, user_message)
-            
+
             await update.message.reply_text(response)
 
         except Exception as e:
@@ -218,14 +218,14 @@ class CoachBot:
             if not os.path.exists(self.credentials_path):
                 logger.error(f"Archivo de credenciales no encontrado en: {self.credentials_path}")
                 return False
-                
+
             credentials = service_account.Credentials.from_service_account_file(
                 self.credentials_path,
                 scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
             )
-            
+
             self.sheets_service = build('sheets', 'v4', credentials=credentials)
-            
+
             try:
                 self.sheets_service.spreadsheets().get(
                     spreadsheetId=self.SPREADSHEET_ID
@@ -235,7 +235,7 @@ class CoachBot:
             except Exception as e:
                 logger.error(f"Error accediendo al spreadsheet: {e}")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error inicializando Google Sheets: {e}")
             return False
@@ -382,12 +382,12 @@ class CoachBot:
                 spreadsheetId=self.SPREADSHEET_ID,
                 range='Usuarios!A:A'
             ).execute()
-            
+
             values = result.get('values', [])
             whitelist = [email[0].lower() for email in values if email]
-            
+
             return email.lower() in whitelist
-            
+
         except Exception as e:
             logger.error(f"Error verificando whitelist: {e}")
             return False
