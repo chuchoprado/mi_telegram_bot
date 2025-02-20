@@ -114,71 +114,71 @@ class CoachBot:
             logger.error(f"❌ Error inesperado creando thread en OpenAI para {chat_id}: {e}")
             return None
 
-    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        """Envía un mensaje al Assistant y espera su respuesta."""
+       # Ejemplo de manejo de errores más específico y detallado
+     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+    try:
         thread_id = await self.get_or_create_thread(chat_id)
         if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
 
-        try:
-            # Crear mensaje en el thread
-            await self.client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_message
-            )
+        # Crear mensaje en el thread
+        await self.client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
 
-            # Crear y ejecutar el run
-            run = await self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+        # Crear y ejecutar el run
+        run = await self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+        )
 
-            # Esperar la respuesta
-            while True:
-                try:
-                    run_status = await self.client.beta.threads.runs.retrieve(
-                        thread_id=thread_id,
-                        run_id=run.id
-                    )
-                except openai.error.OpenAIError as e:
-                    logger.error(f"❌ Error de OpenAI recuperando el estado del run: {e}")
-                    return "⚠️ Hubo un problema al obtener la respuesta del asistente."
-                except Exception as e:
-                    logger.error(f"❌ Error inesperado recuperando el estado del run: {e}")
-                    return "⚠️ Hubo un problema al obtener la respuesta del asistente."
+        # Esperar la respuesta
+        while True:
+            try:
+                run_status = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
+            except openai.error.OpenAIError as e:
+                logger.error(f"❌ Error de OpenAI recuperando el estado del run: {e}")
+                return "⚠️ Hubo un problema al obtener la respuesta del asistente."
+            except Exception as e:
+                logger.error(f"❌ Error inesperado recuperando el estado del run: {e}")
+                return "⚠️ Hubo un problema al obtener la respuesta del asistente."
 
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    raise Exception(f"Run failed with status: {run_status.status}")
+            if run_status.status == 'completed':
+                break
+            elif run_status.status in ['failed', 'cancelled', 'expired']:
+                raise Exception(f"Run failed with status: {run_status.status}")
 
-                await asyncio.sleep(1)
+            await asyncio.sleep(1)
 
-            # Obtener mensajes más recientes
-            messages = await self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=1
-            )
+        # Obtener mensajes más recientes
+        messages = await self.client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=1
+        )
 
-            # Extraer la respuesta del asistente
-            assistant_message = messages.data[0].content[0].text.value
+        # Extraer la respuesta del asistente
+        assistant_message = messages.data[0].content[0].text.value
 
-            # Guardar en el historial
-            self.conversation_history.setdefault(chat_id, []).append({
-                "role": "assistant",
-                "content": assistant_message
-            })
+        # Guardar en el historial
+        self.conversation_history.setdefault(chat_id, []).append({
+            "role": "assistant",
+            "content": assistant_message
+        })
 
-            return assistant_message
+        return assistant_message
 
-        except openai.error.OpenAIError as e:
-            logger.error(f"❌ Error de OpenAI procesando mensaje: {e}")
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
-        except Exception as e:
-            logger.error(f"❌ Error inesperado procesando mensaje: {e}")
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+    except openai.error.OpenAIError as e:
+        logger.error(f"❌ Error de OpenAI procesando mensaje: {e}")
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
+    except Exception as e:
+        logger.error(f"❌ Error inesperado procesando mensaje: {e}")
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
