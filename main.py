@@ -1,5 +1,6 @@
 import os
 import asyncio
+import httpx
 import io
 import sqlite3
 import json
@@ -392,6 +393,17 @@ class CoachBot:
             logger.error(f"Error verificando whitelist: {e}")
             return False
 
+async def fetch_products(query):
+    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+    params = {"query": query}
+    
+    print("Consultando Google Sheets con:", params)  # Log de depuración
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url, params=params)
+    
+    print("Respuesta de Google Sheets:", response.text)  # Log de depuración
+    return response.json()
 # Instanciar el bot
 try:
     bot = CoachBot()
