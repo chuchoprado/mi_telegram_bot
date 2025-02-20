@@ -166,6 +166,35 @@ class CoachBot:
                 "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
             )
 
+    async def fetch_products(self, query):
+        url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+        params = {"query": query}
+        
+        logger.info(f"Consultando Google Sheets con: {params}")
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params)
+
+            logger.info(f"Respuesta de Google Sheets: {response.text}")
+            return response.json()
+        except Exception as e:
+            logger.error(f"Error consultando Google Sheets: {e}")
+            return {"error": "Error consultando Google Sheets"}
+
+    async def process_product_query(self, chat_id: int, query: str) -> str:
+        try:
+            products = await self.fetch_products(query)
+            if "error" in products:
+                return "⚠️ Ocurrió un error al consultar los productos."
+
+            # Procesar y formatear la respuesta de los productos según sea necesario
+            product_list = "\n".join([f"- {product}" for product in products.get("items", [])])
+            return f"🔍 Productos recomendados:\n{product_list}"
+        except Exception as e:
+            logger.error(f"❌ Error procesando consulta de productos: {e}")
+            return "⚠️ Ocurrió un error al procesar tu consulta de productos."
+
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
         try:
@@ -314,7 +343,12 @@ class CoachBot:
             if not user_message:
                 return
 
-            await self.process_text_message(update, context, user_message)
+            if "producto" in user_message.lower():
+                response = await self.process_product_query(chat_id, user_message)
+            else:
+                response = await self.process_text_message(update, context, user_message)
+
+            await update.message.reply_text(response)
 
         except openai.error.OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
@@ -393,17 +427,6 @@ class CoachBot:
             logger.error(f"Error verificando whitelist: {e}")
             return False
 
-async def fetch_products(query):
-    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-    params = {"query": query}
-    
-    print("Consultando Google Sheets con:", params)  # Log de depuración
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.get(url, params=params)
-    
-    print("Respuesta de Google Sheets:", response.text)  # Log de depuración
-    return response.json()
 # Instanciar el bot
 try:
     bot = CoachBot()
