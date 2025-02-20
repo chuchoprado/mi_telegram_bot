@@ -90,7 +90,6 @@ class CoachBot:
             return self.user_threads[chat_id]
 
         try:
-            # Crear un nuevo thread usando la API actualizada
             thread = await self.client.beta.threads.create()
             self.user_threads[chat_id] = thread.id
             return thread.id
@@ -105,20 +104,17 @@ class CoachBot:
             if not thread_id:
                 return "❌ No se pudo establecer conexión con el asistente."
 
-            # Crear mensaje en el thread usando la API actualizada
             await self.client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
                 content=user_message
             )
 
-            # Crear y ejecutar el run
             run = await self.client.beta.threads.runs.create(
                 thread_id=thread_id,
                 assistant_id=self.assistant_id
             )
 
-            # Esperar la respuesta
             while True:
                 run_status = await self.client.beta.threads.runs.retrieve(
                     thread_id=thread_id,
@@ -132,17 +128,14 @@ class CoachBot:
 
                 await asyncio.sleep(1)
 
-            # Obtener mensajes más recientes
             messages = await self.client.beta.threads.messages.list(
                 thread_id=thread_id,
                 order="desc",
                 limit=1
             )
 
-            # Extraer la respuesta del asistente
             assistant_message = messages.data[0].content[0].text.value
 
-            # Guardar en el historial
             self.conversation_history.setdefault(chat_id, []).append({
                 "role": "assistant",
                 "content": assistant_message
@@ -154,19 +147,16 @@ class CoachBot:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
         chat_id = update.effective_chat.id
         logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
 
         try:
-            # Mostrar que el bot está escribiendo
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-            # Obtener respuesta del Assistant
             response = await self.send_message_to_assistant(chat_id, user_message)
             
-            # Enviar respuesta al usuario
             await update.message.reply_text(response)
 
         except Exception as e:
@@ -231,12 +221,11 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
                 
             credentials = service_account.Credentials.from_service_account_file(
                 self.credentials_path,
-                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']  # Scope mínimo necesario
+                scopes=['https://www.googleapis.com/auth/spreadsheets.readonly']
             )
             
             self.sheets_service = build('sheets', 'v4', credentials=credentials)
             
-            # Verificar acceso al spreadsheet
             try:
                 self.sheets_service.spreadsheets().get(
                     spreadsheetId=self.SPREADSHEET_ID
@@ -345,6 +334,63 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
             recognizer = sr.Recognizer()
             with sr.AudioFile(voice_file_path) as source:
                 audio = recognizer.record(source)
+
+            try:
+                user_message = recognizer.recognize_google(audio, language='es-ES')
+                logger.info(f"Transcripción de voz: {user_message}")
+                await self.process_text_message(update, context, user_message)
+            except sr.UnknownValueError:
+                await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
+            except sr.RequestError as e:
+                logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
+                await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
+
+        except Exception as e:
+            logger.error(f"Error manejando mensaje de voz: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
+
+    async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Verifica el email del usuario"""
+        chat_id = update.message.chat.id
+        user_email = update.message.text.strip().lower()
+        username = update.message.from_user.username or "Unknown"
+
+        if not '@' in user_email or not '.' in user_email:
+            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
+            return
+
+        try:
+            if not await self.is_user_whitelisted(user_email):
+                await update.message.reply_text(
+                    "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+                )
+                return
+
+            thread_id = await self.get_or_create_thread(chat_id)
+            self.user_threads[chat_id] = thread_id
+
+            self.save_verified_user(chat_id, user_email, username)
+            await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+
+        except Exception as e:
+            logger.error(f"❌ Error verificando email para {chat_id}: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+
+    async def is_user_whitelisted(self, email: str) -> bool:
+        try:
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.SPREADSHEET_ID,
+                range='Usuarios!A:A'
+            ).execute()
+            
+            values = result.get('values', [])
+            whitelist = [email[0].lower() for email in values if email]
+            
+            return email.lower() in whitelist
+            
+        except Exception as e:
+            logger.error(f"Error verificando whitelist: {e}")
+            return False
 
 # Instanciar el bot
 try:
