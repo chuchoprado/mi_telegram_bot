@@ -20,8 +20,8 @@ from contextlib import closing
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO  # Corregir aquí para evitar error de formato
+    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -57,8 +57,8 @@ class CoachBot:
         self.user_threads = {}
         self.db_path = 'bot_data.db'
 
-        # Inicializar la aplicación
-        self.app = Application.builder().token(self.TELEGRAM_TOKEN).build()
+        # Inicializar la aplicación de Telegram
+        self.telegram_app = Application.builder().token(self.TELEGRAM_TOKEN).build()
 
         self._init_db()
         self.setup_handlers()
@@ -149,11 +149,6 @@ class CoachBot:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-    import openai  # Asegúrate de importar la librería openai
-
-class CoachBot:
-    # Resto del código...
-
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
         chat_id = update.effective_chat.id
@@ -211,13 +206,13 @@ class CoachBot:
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
         try:
-            self.app.add_handler(CommandHandler("start", self.start_command))
-            self.app.add_handler(CommandHandler("help", self.help_command))
-            self.app.add_handler(MessageHandler(
+            self.telegram_app.add_handler(CommandHandler("start", self.start_command))
+            self.telegram_app.add_handler(CommandHandler("help", self.help_command))
+            self.telegram_app.add_handler(MessageHandler(
                 filters.TEXT & ~filters.COMMAND,
                 self.route_message
             ))
-            self.app.add_handler(MessageHandler(
+            self.telegram_app.add_handler(MessageHandler(
                 filters.VOICE,
                 self.handle_voice_message
             ))
@@ -286,11 +281,11 @@ class CoachBot:
     async def async_init(self):
         """Inicialización asíncrona del bot"""
         try:
-            await self.app.initialize()
+            await self.telegram_app.initialize()
             self.load_verified_users()
             if not self.started:
                 self.started = True
-                await self.app.start()
+                await self.telegram_app.start()
             logger.info("Bot inicializado correctamente")
         except Exception as e:
             logger.error(f"Error en async_init: {e}")
@@ -462,8 +457,8 @@ async def webhook(request: Request):
     """Webhook de Telegram"""
     try:
         data = await request.json()
-        update = Update.de_json(data, bot.app.bot)
-        await bot.app.update_queue.put(update)
+        update = Update.de_json(data, bot.telegram_app.bot)
+        await bot.telegram_app.update_queue.put(update)
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
