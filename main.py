@@ -20,7 +20,7 @@ from contextlib import closing
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levellevelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -151,6 +151,31 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
+
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        """Procesa mensajes de texto del usuario."""
+        chat_id = update.effective_chat.id
+        logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
+
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+
+            response = await self.send_message_to_assistant(chat_id, user_message)
+
+            if response is None or not response.strip():
+                raise ValueError("La respuesta del asistente está vacía")
+
+            await update.message.reply_text(response)
+
+        except openai.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            await update.message.reply_text(
+                "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
+            )
 
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
@@ -448,17 +473,5 @@ async def webhook(request: Request):
     """Webhook de Telegram"""
     try:
         data = await request.json()
-        update = Update.de_json(data, bot.telegram_app.bot)
-        await bot.telegram_app.update_queue.put(update)
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"❌ Error procesando webhook: {e}")
-        return {"status": "error", "message": str(e)}
-
-@app.get("/")
-async def health_check():
-    return {"status": "alive"}
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+        update = Update.de_json(data, bot.telegram_app.bot
+        
