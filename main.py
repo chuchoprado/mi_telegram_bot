@@ -103,11 +103,11 @@ class CoachBot:
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
     """
     Envía un mensaje al asistente de OpenAI y espera su respuesta.
-    
+
     Args:
         chat_id (int): ID del chat de Telegram
         user_message (str): Mensaje del usuario
-        
+
     Returns:
         str: Respuesta del asistente
     """
