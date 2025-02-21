@@ -100,8 +100,8 @@ class CoachBot:
             logger.error(f"❌ Error creando thread para {chat_id}: {e}")
             return None
 
-        async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        try:
+            async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        try:  # ✅ Ahora correctamente indentado
             thread_id = await self.get_or_create_thread(chat_id)
             if not thread_id:
                 return "❌ No se pudo establecer conexión con el asistente."
