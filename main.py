@@ -101,82 +101,71 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        try:
-            thread_id = await self.get_or_create_thread(chat_id)
-            if not thread_id:
-                return "❌ No se pudo establecer conexión con el asistente."
+    try:
+        thread_id = await self.get_or_create_thread(chat_id)
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
 
-            await self.client.beta.threads.messages.create(
+        await self.client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
+
+        run = await self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+        )
+
+        while True:
+            run_status = await self.client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
-                role="user",
-                content=user_message
+                run_id=run.id
             )
 
-            run = await self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+            if run_status.status == 'completed':
+                break
+            elif run_status.status in ['failed', 'cancelled', 'expired']:
+                raise Exception(f"Run failed with status: {run_status.status}")
 
-            while True:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
+            await asyncio.sleep(1)
 
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    raise Exception(f"Run failed with status: {run_status.status}")
+        messages = await self.client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=1
+        )
 
-                await asyncio.sleep(1)
+        if not messages.data or not messages.data[0].content:
+            raise ValueError("La respuesta del asistente está vacía")
 
-            messages = await self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=1
-            )
+        assistant_message = messages.data[0].content[0].text.value
 
-            if not messages.data or not messages.data[0].content:
-                raise ValueError("La respuesta del asistente está vacía")
+        self.conversation_history.setdefault(chat_id, []).append({
+            "role": "assistant",
+            "content": assistant_message
+        })
 
-            assistant_message = messages.data[0].content[0].text.value
+        return assistant_message
 
-            self.conversation_history.setdefault(chat_id, []).append({
-                "role": "assistant",
-                "content": assistant_message
-            })
+    except Exception as e:
+        logger.error(f"❌ Error procesando mensaje: {e}")
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-            return assistant_message
+async def process_product_query(self, chat_id: int, query: str) -> str:
+    try:
+        products = await self.fetch_products(query)
+        if "error" in products:
+            return "⚠️ Ocurrió un error al consultar los productos."
 
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje: {e}")
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+        product_list = "\n".join([f"- {product['titulo']}: {product['descripcion']} (link: {product['link']})" for product in products.get("data", [])])
+        if not product_list:
+            return "⚠️ No se encontraron productos."
 
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-        """Procesa mensajes de texto del usuario."""
-        chat_id = update.effective_chat.id
-        logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
-
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
-            response = await self.send_message_to_assistant(chat_id, user_message)
-
-            if response is None or not response.strip():
-                raise ValueError("La respuesta del asistente está vacía")
-
-            await update.message.reply_text(response)
-
-        except openai.OpenAIError as e:
-            logger.error(f"❌ Error en OpenAI: {e}")
-            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
-
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje: {e}")
-            await update.message.reply_text(
-                "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
-            )
-
+        return f"🔍 Productos recomendados:\n{product_list}"
+    except Exception as e:
+        logger.error(f"❌ Error procesando consulta de productos: {e}")
+        return "⚠️ Ocurrió un error al procesar tu consulta de productos."
     async def fetch_products(self, query):
         url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
         params = {"query": query}
@@ -201,18 +190,6 @@ class CoachBot:
             logger.error(f"❌ Error consultando Google Sheets: {e}")
             return {"error": "Error consultando Google Sheets"}
 
-    async def process_product_query(self, chat_id: int, query: str) -> str:
-        try:
-            products = await self.fetch_products(query)
-            if "error" in products:
-                return "⚠️ Ocurrió un error al consultar los productos."
-
-            # Procesar y formatear la respuesta de los productos según sea necesario
-            product_list = "\n".join([f"- {product}" for product in products.get("items", [])])
-            return f"🔍 Productos recomendados:\n{product_list}"
-        except Exception as e:
-            logger.error(f"❌ Error procesando consulta de productos: {e}")
-            return "⚠️ Ocurrió un error al procesar tu consulta de productos."
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
