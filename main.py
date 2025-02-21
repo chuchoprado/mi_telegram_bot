@@ -20,7 +20,7 @@ from contextlib import closing
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -474,6 +474,4 @@ async def webhook(request: Request):
 async def health_check():
     return {"status": "alive"}
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn
+if __name__ ==
