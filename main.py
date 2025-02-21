@@ -235,7 +235,7 @@ class CoachBot:
 
     def save_verified_user(self, chat_id, email, username):
         """Guarda un usuario validado en la base de datos."""
-        with closing(sqlite3.connect(this.db_path)) as conn:
+        with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO users (chat_id, email, username)
@@ -444,3 +444,36 @@ class CoachBot:
 # Instanciar el bot
 try:
     bot = CoachBot()
+except Exception as e:
+    logger.error(f"Error crítico inicializando el bot: {e}")
+    raise
+
+@app.on_event("startup")
+async def startup_event():
+    """Evento de inicio de la aplicación"""
+    try:
+        await bot.async_init()
+        logger.info("Aplicación iniciada correctamente")
+    except Exception as e:
+        logger.error(f"Error en startup: {e}")
+        raise
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    """Webhook de Telegram"""
+    try:
+        data = await request.json()
+        update = Update.de_json(data, bot.telegram_app.bot)
+        await bot.telegram_app.update_queue.put(update)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"❌ Error procesando webhook: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.get("/")
+async def health_check():
+    return {"status": "alive"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
