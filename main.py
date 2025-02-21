@@ -101,8 +101,9 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    try:
+    try:  # ✅ Ahora está correctamente indentado
         thread_id = await self.get_or_create_thread(chat_id)
+
         if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
 
@@ -155,7 +156,7 @@ class CoachBot:
         logger.error(f"❌ Error procesando mensaje: {e}")
         return "⚠️ Ocurrió un error al procesar tu mensaje."
         
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
         chat_id = update.effective_chat.id
         logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
@@ -186,7 +187,7 @@ class CoachBot:
             if "error" in products:
                 return "⚠️ Ocurrió un error al consultar los productos."
 
-            product_list = "\n".join([f"- {product['titulo']}: {product['descripcion']} (link: {product['link']})" for product in products.get("data", [])])
+            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])])
             if not product_list:
                 return "⚠️ No se encontraron productos."
 
@@ -469,7 +470,6 @@ async def startup_event():
         logger.info("Aplicación iniciada correctamente")
     except Exception as e:
         logger.error(f"❌ Error al iniciar la aplicación: {e}")
-        return {"status": "error", "message": str(e)}
 
 @app.post("/webhook")
 async def webhook(request: Request):
