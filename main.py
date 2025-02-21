@@ -101,7 +101,17 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    try:  # ✅ Ahora está correctamente indentado
+    """
+    Envía un mensaje al asistente de OpenAI y espera su respuesta.
+    
+    Args:
+        chat_id (int): ID del chat de Telegram
+        user_message (str): Mensaje del usuario
+        
+    Returns:
+        str: Respuesta del asistente
+    """
+    try:
         thread_id = await self.get_or_create_thread(chat_id)
 
         if not thread_id:
