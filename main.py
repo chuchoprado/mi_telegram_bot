@@ -153,7 +153,7 @@ class CoachBot:
 
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+        return "⚠️ Ocurrió un error al procesar tu mensaje." 
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
