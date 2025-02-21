@@ -159,7 +159,7 @@ class CoachBot:
 
             response = await self.send_message_to_assistant(chat_id, user_message)
 
-            if not response.strip():
+            if response is None or not response.strip():
                 raise ValueError("La respuesta del asistente está vacía")
 
             await update.message.reply_text(response)
@@ -359,7 +359,7 @@ class CoachBot:
             else:
                 response = await self.process_text_message(update, context, user_message)
 
-            if not response.strip():
+            if response is None or not response.strip():
                 raise ValueError("La respuesta del asistente está vacía")
 
             await update.message.reply_text(response)
@@ -476,4 +476,4 @@ async def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    uvicorn
