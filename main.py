@@ -20,7 +20,7 @@ from contextlib import closing
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levellevelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -101,71 +101,72 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    try:
-        thread_id = await self.get_or_create_thread(chat_id)
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+        try:
+            thread_id = await self.get_or_create_thread(chat_id)
+            if not thread_id:
+                return "❌ No se pudo establecer conexión con el asistente."
 
-        await self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-
-        while True:
-            run_status = await self.client.beta.threads.runs.retrieve(
+            await self.client.beta.threads.messages.create(
                 thread_id=thread_id,
-                run_id=run.id
+                role="user",
+                content=user_message
             )
 
-            if run_status.status == 'completed':
-                break
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                raise Exception(f"Run failed with status: {run_status.status}")
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
 
-            await asyncio.sleep(1)
+            while True:
+                run_status = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
 
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    raise Exception(f"Run failed with status: {run_status.status}")
 
-        if not messages.data or not messages.data[0].content:
-            raise ValueError("La respuesta del asistente está vacía")
+                await asyncio.sleep(1)
 
-        assistant_message = messages.data[0].content[0].text.value
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
 
-        self.conversation_history.setdefault(chat_id, []).append({
-            "role": "assistant",
-            "content": assistant_message
-        })
+            if not messages.data or not messages.data[0].content:
+                raise ValueError("La respuesta del asistente está vacía")
 
-        return assistant_message
+            assistant_message = messages.data[0].content[0].text.value
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+            self.conversation_history.setdefault(chat_id, []).append({
+                "role": "assistant",
+                "content": assistant_message
+            })
 
-async def process_product_query(self, chat_id: int, query: str) -> str:
-    try:
-        products = await self.fetch_products(query)
-        if "error" in products:
-            return "⚠️ Ocurrió un error al consultar los productos."
+            return assistant_message
 
-        product_list = "\n".join([f"- {product['titulo']}: {product['descripcion']} (link: {product['link']})" for product in products.get("data", [])])
-        if not product_list:
-            return "⚠️ No se encontraron productos."
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-        return f"🔍 Productos recomendados:\n{product_list}"
-    except Exception as e:
-        logger.error(f"❌ Error procesando consulta de productos: {e}")
-        return "⚠️ Ocurrió un error al procesar tu consulta de productos."
+    async def process_product_query(self, chat_id: int, query: str) -> str:
+        try:
+            products = await self.fetch_products(query)
+            if "error" in products:
+                return "⚠️ Ocurrió un error al consultar los productos."
+
+            product_list = "\n".join([f"- {product['titulo']}: {product['descripcion']} (link: {product['link']})" for product in products.get("data", [])])
+            if not product_list:
+                return "⚠️ No se encontraron productos."
+
+            return f"🔍 Productos recomendados:\n{product_list}"
+        except Exception as e:
+            logger.error(f"❌ Error procesando consulta de productos: {e}")
+            return "⚠️ Ocurrió un error al procesar tu consulta de productos."
+
     async def fetch_products(self, query):
         url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
         params = {"query": query}
@@ -189,7 +190,6 @@ async def process_product_query(self, chat_id: int, query: str) -> str:
         except Exception as e:
             logger.error(f"❌ Error consultando Google Sheets: {e}")
             return {"error": "Error consultando Google Sheets"}
-
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
