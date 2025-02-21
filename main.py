@@ -20,7 +20,7 @@ from contextlib import closing
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levellevel)s - %(message)s',
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
@@ -164,7 +164,7 @@ class CoachBot:
 
             await update.message.reply_text(response)
 
-        except openai.error.OpenAIError as e:
+        except openai.OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
             await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
@@ -364,7 +364,7 @@ class CoachBot:
 
             await update.message.reply_text(response)
 
-        except openai.error.OpenAIError as e:
+        except openai.OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
             await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
