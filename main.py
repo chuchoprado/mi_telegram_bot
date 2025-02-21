@@ -478,5 +478,5 @@ async def webhook(request: Request):
         return {"status": "ok"}
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
-        return {"status": "error", "message": str(e)}ot
+        return {"status": "error", "message": str(e)}
         
