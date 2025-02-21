@@ -159,6 +159,9 @@ class CoachBot:
 
             response = await self.send_message_to_assistant(chat_id, user_message)
 
+            if not response.strip():
+                raise ValueError("La respuesta del asistente está vacía")
+
             await update.message.reply_text(response)
 
         except openai.error.OpenAIError as e:
@@ -355,6 +358,9 @@ class CoachBot:
                 response = await self.process_product_query(chat_id, user_message)
             else:
                 response = await self.process_text_message(update, context, user_message)
+
+            if not response.strip():
+                raise ValueError("La respuesta del asistente está vacía")
 
             await update.message.reply_text(response)
 
