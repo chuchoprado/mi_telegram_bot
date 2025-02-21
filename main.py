@@ -473,5 +473,10 @@ async def webhook(request: Request):
     """Webhook de Telegram"""
     try:
         data = await request.json()
-        update = Update.de_json(data, bot.telegram_app.bot
+        update = Update.de_json(data, bot.telegram_app.bot)
+        await bot.telegram_app.update_queue.put(update)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"❌ Error procesando webhook: {e}")
+        return {"status": "error", "message": str(e)}ot
         
