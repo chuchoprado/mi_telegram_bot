@@ -149,6 +149,11 @@ class CoachBot:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
+    import openai  # Asegúrate de importar la librería openai
+
+class CoachBot:
+    # Resto del código...
+
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
         chat_id = update.effective_chat.id
@@ -171,7 +176,6 @@ class CoachBot:
                 "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
             )
 
-# Resto del código...
     async def fetch_products(self, query):
         url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
         params = {"query": query}
