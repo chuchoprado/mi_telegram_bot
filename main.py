@@ -151,6 +151,7 @@ class CoachBot:
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
         return "⚠️ Ocurrió un error al procesar tu mensaje."
+
         
 async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
     """Procesa mensajes de texto del usuario."""
@@ -177,24 +178,31 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
             "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
         )
 
-    async def fetch_products(self, query):
-        url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-        params = {"query": query}
-        
-        logger.info(f"Consultando Google Sheets con: {params}")
 
-        try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
-                if response.status_code == 302:
-                    new_url = response.headers.get('Location')
-                    response = await client.get(new_url)
+async def fetch_products(self, query):
+    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+    params = {"query": query}
+    
+    logger.info(f"Consultando Google Sheets con: {params}")
 
-            logger.info(f"Respuesta de Google Sheets: {response.text}")
-            return response.json()
-        except Exception as e:
-            logger.error(f"Error consultando Google Sheets: {e}")
-            return {"error": "Error consultando Google Sheets"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url, params=params, follow_redirects=True)
+
+        if response.status_code != 200:
+            raise Exception(f"Error en Google Sheets API: {response.status_code}")
+
+        logger.info(f"Respuesta de Google Sheets: {response.text}")
+        return response.json()
+
+    except httpx.TimeoutException:
+        logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
+        return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
+
+    except Exception as e:
+        logger.error(f"❌ Error consultando Google Sheets: {e}")
+        return {"error": "Error consultando Google Sheets"}
+
 
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
@@ -458,8 +466,8 @@ async def startup_event():
         await bot.async_init()
         logger.info("Aplicación iniciada correctamente")
     except Exception as e:
-        logger.error(f"Error en startup: {e}")
-        raise
+        logger.error(f"❌ Error al iniciar la aplicación: {e}")
+        return {"status": "error", "message": str(e)}
 
 @app.post("/webhook")
 async def webhook(request: Request):
