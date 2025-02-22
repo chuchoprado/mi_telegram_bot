@@ -105,7 +105,6 @@ class CoachBot:
         Args:
         chat_id (int): ID del chat de Telegram
         user_message (str): Mensaje del usuario
-
         Returns:
         str: Respuesta del asistente o un mensaje de error en caso de fallo.
         """
@@ -114,43 +113,43 @@ class CoachBot:
             if not thread_id:
                 return "❌ No se pudo establecer conexión con el asistente."
 
-        # Revisar si hay un `run` activo y esperar a que termine
-        while True:
+            # Revisar si hay un `run` activo y esperar a que termine
+            while True:
             active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
             if not any(run.status == "in_progress" for run in active_runs.data):
                 break
             logger.info("⌛ Esperando que finalice el run activo antes de enviar nuevo mensaje...")
             await asyncio.sleep(2)
 
-        # Enviar mensaje del usuario
-        await self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-
-        # Iniciar ejecución del asistente
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-
-        # Esperar respuesta de OpenAI con un timeout extendido
-        start_time = time.time()
-        while True:
-            run_status = await self.client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
+            # Enviar mensaje del usuario
+            await self.client.beta.threads.messages.create(
+               thread_id=thread_id,
+               role="user",
+               content=user_message
             )
 
-            if run_status.status == "completed":
-                break
-            elif run_status.status in ["failed", "cancelled", "expired"]:
-                raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
-            elif time.time() - start_time > 90:  # Timeout extendido a 90s
-                raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
+            # Iniciar ejecución del asistente
+            run = await self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+            )
 
-            await asyncio.sleep(2)
+            # Esperar respuesta de OpenAI con un timeout extendido
+            start_time = time.time()
+            while True:
+                run_status = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+               )
+
+               if run_status.status == "completed":
+                   break
+               elif run_status.status in ["failed", "cancelled", "expired"]:
+                   raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
+               elif time.time() - start_time > 90:  # Timeout extendido a 90s
+                   raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
+ 
+               await asyncio.sleep(2)
 
         # Obtener el último mensaje generado por el asistente
         messages = await self.client.beta.threads.messages.list(
