@@ -100,7 +100,7 @@ class CoachBot:
             logger.error(f"❌ Error creando thread para {chat_id}: {e}")
             return None
 
-    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
     """
     Envía un mensaje al asistente de OpenAI y espera su respuesta.
 
