@@ -100,71 +100,93 @@ class CoachBot:
             logger.error(f"❌ Error creando thread para {chat_id}: {e}")
             return None
 
-        async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        """
-        Envía un mensaje al asistente de OpenAI y espera su respuesta.
+    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+    """
+    Envía un mensaje al asistente de OpenAI y espera su respuesta.
 
-        Args:
-            chat_id (int): ID del chat de Telegram
-            user_message (str): Mensaje del usuario
+    Args:
+        chat_id (int): ID del chat de Telegram
+        user_message (str): Mensaje del usuario
 
-        Returns:
-            str: Respuesta del asistente
-        """
-        try:
-            thread_id = await self.get_or_create_thread(chat_id)
+    Returns:
+        str: Respuesta del asistente o un mensaje de error en caso de fallo.
+    """
+    try:
+        thread_id = await self.get_or_create_thread(chat_id)
 
-            if not thread_id:
-                return "❌ No se pudo establecer conexión con el asistente."
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
 
-            await self.client.beta.threads.messages.create(
+        # Revisar si hay un `run` activo y esperar a que termine
+        while True:
+            active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
+            if not any(run.status == "in_progress" for run in active_runs.data):
+                break
+            logger.info("⌛ Esperando que finalice el run activo antes de enviar nuevo mensaje...")
+            await asyncio.sleep(2)
+
+        # Enviar mensaje del usuario
+        await self.client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
+
+        # Iniciar ejecución del asistente
+        run = await self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+        )
+
+        # Esperar respuesta de OpenAI con un timeout extendido
+        start_time = time.time()
+        while True:
+            run_status = await self.client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
-                role="user",
-                content=user_message
+                run_id=run.id
             )
 
-            run = await self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+            if run_status.status == "completed":
+                break
+            elif run_status.status in ["failed", "cancelled", "expired"]:
+                raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
+            elif time.time() - start_time > 90:  # Timeout extendido a 90s
+                raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
 
-            start_time = time.time()
-            while True:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
+            await asyncio.sleep(2)
 
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    return "⚠️ El asistente no pudo procesar tu mensaje. Inténtalo más tarde."
-                elif time.time() - start_time > 60:  # Timeout después de 60 segundos
-                    return "⚠️ El asistente tardó demasiado en responder. Inténtalo más tarde."
+        # Obtener el último mensaje generado por el asistente
+        messages = await self.client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=1
+        )
 
-                await asyncio.sleep(1)
+        if not messages.data or not messages.data[0].content:
+            logger.warning("⚠️ OpenAI devolvió una respuesta vacía.")
+            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-            messages = await self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=1
-            )
+        assistant_message = messages.data[0].content[0].text.value.strip()
 
-            if not messages.data or not messages.data[0].content:
-                return "⚠️ No obtuve una respuesta válida del asistente. Inténtalo más tarde."
+        if not assistant_message:
+            logger.warning("⚠️ Respuesta del asistente vacía tras limpieza.")
+            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-            assistant_message = messages.data[0].content[0].text.value
+        # Guardar en historial
+        self.conversation_history.setdefault(chat_id, []).append({
+            "role": "assistant",
+            "content": assistant_message
+        })
 
-            self.conversation_history.setdefault(chat_id, []).append({
-                "role": "assistant",
-                "content": assistant_message
-            })
+        return assistant_message
 
-            return assistant_message
+    except TimeoutError as e:
+        logger.error(f"❌ TimeoutError: {e}")
+        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje: {e}")
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+    except Exception as e:
+        logger.error(f"❌ Error procesando mensaje: {e}")
+        return "⚠️ Ocurrió un error al procesar tu mensaje."    
 
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
