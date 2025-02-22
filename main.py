@@ -178,12 +178,12 @@ class CoachBot:
         return assistant_message
 
         except TimeoutError as e:
-        logger.error(f"❌ TimeoutError: {e}")
-        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
+            logger.error(f"❌ TimeoutError: {e}")
+            return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
         except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."    
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."    
 
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
