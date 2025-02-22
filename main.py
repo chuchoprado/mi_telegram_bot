@@ -166,34 +166,36 @@ class CoachBot:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-    """Procesa mensajes de texto del usuario."""
-    chat_id = update.effective_chat.id
-    logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
+   async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        """Procesa mensajes de texto del usuario."""
 
-    try:
-        await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        chat_id = update.effective_chat.id
+        logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
 
-        response = await self.send_message_to_assistant(chat_id, user_message)
+        try:
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
 
-        if response is None or not response.strip():
-            raise ValueError("La respuesta del asistente está vacía")
+            response = await self.send_message_to_assistant(chat_id, user_message)
 
-        await update.message.reply_text(response)
+            if response is None or not response.strip():
+                raise ValueError("La respuesta del asistente está vacía")
 
-    except openai.OpenAIError as e:
-        logger.error(f"❌ Error en OpenAI: {e}")
-        await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+            await update.message.reply_text(response)
 
-    except ValueError as e:
-        logger.error(f"⚠️ Error de validación: {e}")
-        await update.message.reply_text("⚠️ La respuesta del asistente está vacía. Inténtalo más tarde.")
+        except openai.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        await update.message.reply_text(
-            "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
-        )
+        except ValueError as e:
+            logger.error(f"⚠️ Error de validación: {e}")
+            await update.message.reply_text("⚠️ La respuesta del asistente está vacía. Inténtalo más tarde.")
+
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            await update.message.reply_text(
+                "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
+            )
+
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
             products = await self.fetch_products(query)
