@@ -166,7 +166,7 @@ class CoachBot:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-   async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
 
         chat_id = update.effective_chat.id
@@ -196,6 +196,7 @@ class CoachBot:
                 "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
             )
 
+    
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
             products = await self.fetch_products(query)
