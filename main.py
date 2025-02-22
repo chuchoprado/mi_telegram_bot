@@ -117,21 +117,21 @@ class CoachBot:
             while True:
                 active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
                 if not any(run.status == "in_progress" for run in active_runs.data):
-                   break
+                    break
                 logger.info("⌛ Esperando que finalice el run activo antes de enviar nuevo mensaje...")
                 await asyncio.sleep(2)
 
             # Enviar mensaje del usuario
             await self.client.beta.threads.messages.create(
-               thread_id=thread_id,
-               role="user",
-               content=user_message
+                thread_id=thread_id,
+                role="user",
+                content=user_message
             )
 
             # Iniciar ejecución del asistente
             run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
             )
 
             # Esperar respuesta de OpenAI con un timeout extendido
@@ -140,41 +140,41 @@ class CoachBot:
                 run_status = await self.client.beta.threads.runs.retrieve(
                     thread_id=thread_id,
                     run_id=run.id
-               )
+                )
 
-               if run_status.status == "completed":
-                   break
-               elif run_status.status in ["failed", "cancelled", "expired"]:
-                   raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
-               elif time.time() - start_time > 90:  # Timeout extendido a 90s
-                   raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
- 
-               await asyncio.sleep(2)
+                if run_status.status == "completed":
+                    break
+                elif run_status.status in ["failed", "cancelled", "expired"]:
+                    raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
+                elif time.time() - start_time > 90:  # Timeout extendido a 90s
+                    raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
 
-        # Obtener el último mensaje generado por el asistente
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+                await asyncio.sleep(2)
 
-        if not messages.data or not messages.data[0].content:
-            logger.warning("⚠️ OpenAI devolvió una respuesta vacía.")
-            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+            # Obtener el último mensaje generado por el asistente
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
 
-        assistant_message = messages.data[0].content[0].text.value.strip()
+            if not messages.data or not messages.data[0].content:
+                logger.warning("⚠️ OpenAI devolvió una respuesta vacía.")
+                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-        if not assistant_message:
-            logger.warning("⚠️ Respuesta del asistente vacía tras limpieza.")
-            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+            assistant_message = messages.data[0].content[0].text.value.strip()
 
-        # Guardar en historial
-        self.conversation_history.setdefault(chat_id, []).append({
-            "role": "assistant",
-            "content": assistant_message
-        })
+            if not assistant_message:
+                logger.warning("⚠️ Respuesta del asistente vacía tras limpieza.")
+                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-        return assistant_message
+            # Guardar en historial
+            self.conversation_history.setdefault(chat_id, []).append({
+                "role": "assistant",
+                "content": assistant_message
+            })
+
+            return assistant_message
 
         except TimeoutError as e:
             logger.error(f"❌ TimeoutError: {e}")
@@ -182,7 +182,7 @@ class CoachBot:
 
         except Exception as e:
             logger.error(f"❌ Error procesando mensaje: {e}")
-            return "⚠️ Ocurrió un error al procesar tu mensaje."    
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
@@ -215,14 +215,15 @@ class CoachBot:
                 "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
             )
 
-    
+
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
             products = await self.fetch_products(query)
             if "error" in products:
                 return "⚠️ Ocurrió un error al consultar los productos."
 
-            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])])
+            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])][...]
+
             if not product_list:
                 return "⚠️ No se encontraron productos."
 
@@ -230,6 +231,7 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error procesando consulta de productos: {e}")
             return "⚠️ Ocurrió un error al procesar tu consulta de productos."
+
 
     async def fetch_products(self, query):
         url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
@@ -487,26 +489,27 @@ class CoachBot:
             logger.error(f"Error verificando whitelist: {e}")
             return False
 
-# Instanciar el bot
-try:
-    bot = CoachBot()
-except Exception as e:
-    logger.error(f"Error crítico inicializando el bot: {e}")
-    raise
+       # Instanciar el bot
+       try:
+           bot = CoachBot()
+        except Exception as e:
+            logger.error(f"Error crítico inicializando el bot: {e}")
+            raise
 
-@app.on_event("startup")
-async def startup_event():
-    """Evento de inicio de la aplicación"""
-    try:
-        await bot.async_init()
-        logger.info("Aplicación iniciada correctamente")
-    except Exception as e:
-        logger.error(f"❌ Error al iniciar la aplicación: {e}")
+        @app.on_event("startup")
 
-@app.post("/webhook")
-async def webhook(request: Request):
-    """Webhook de Telegram"""
-    try:
+  async def startup_event():
+       """Evento de inicio de la aplicación"""
+       try:
+            await bot.async_init()
+           logger.info("Aplicación iniciada correctamente")
+       except Exception as e:
+            logger.error(f"❌ Error al iniciar la aplicación: {e}")
+
+     @app.post("/webhook")
+ async def webhook(request: Request):
+      """Webhook de Telegram"""
+     try:
         data = await request.json()
         update = Update.de_json(data, bot.telegram_app.bot)
         await bot.telegram_app.update_queue.put(update)
@@ -514,4 +517,3 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
-        
