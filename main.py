@@ -456,17 +456,19 @@ class CoachBot:
             await update.message.reply_text("❌ Por favor, proporciona un email válido.")
             return
 
-        try:
-    # Your logic here, for example:
+       try:
+    # Verificar si el usuario está en la lista blanca
     if not await self.is_user_whitelisted(user_email):
         await update.message.reply_text(
             "❌ Tu email no está en la lista autorizada. Contacta a soporte."
         )
         return
 
+    # Crear o recuperar un thread para el usuario
     thread_id = await self.get_or_create_thread(chat_id)
     self.user_threads[chat_id] = thread_id
 
+    # Guardar el usuario verificado en la base de datos
     self.save_verified_user(chat_id, user_email, username)
     await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
     
