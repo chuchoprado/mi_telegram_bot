@@ -110,8 +110,7 @@ class CoachBot:
         str: Respuesta del asistente o un mensaje de error en caso de fallo.
         """
         try:
-        thread_id = await self.get_or_create_thread(chat_id)
-
+            thread_id = await self.get_or_create_thread(chat_id)
             if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
 
