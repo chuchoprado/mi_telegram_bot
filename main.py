@@ -115,11 +115,11 @@ class CoachBot:
 
             # Revisar si hay un `run` activo y esperar a que termine
             while True:
-            active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
-            if not any(run.status == "in_progress" for run in active_runs.data):
-                break
-            logger.info("⌛ Esperando que finalice el run activo antes de enviar nuevo mensaje...")
-            await asyncio.sleep(2)
+                active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
+                if not any(run.status == "in_progress" for run in active_runs.data):
+                   break
+                logger.info("⌛ Esperando que finalice el run activo antes de enviar nuevo mensaje...")
+                await asyncio.sleep(2)
 
             # Enviar mensaje del usuario
             await self.client.beta.threads.messages.create(
