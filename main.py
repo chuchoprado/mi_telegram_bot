@@ -100,7 +100,7 @@ class CoachBot:
             logger.error(f"❌ Error creando thread para {chat_id}: {e}")
             return None
 
-    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
         """
         Envía un mensaje al asistente de OpenAI y espera su respuesta.
 
@@ -138,9 +138,9 @@ class CoachBot:
                 if run_status.status == 'completed':
                     break
                 elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    raise Exception(f"Run failed with status: {run_status.status}")
-                elif time.time() - start_time > 60:  # Timeout after 60 seconds
-                    raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
+                    return "⚠️ El asistente no pudo procesar tu mensaje. Inténtalo más tarde."
+                elif time.time() - start_time > 60:  # Timeout después de 60 segundos
+                    return "⚠️ El asistente tardó demasiado en responder. Inténtalo más tarde."
 
                 await asyncio.sleep(1)
 
@@ -151,7 +151,7 @@ class CoachBot:
             )
 
             if not messages.data or not messages.data[0].content:
-                return "⚠️ La respuesta del asistente está vacía. Inténtalo más tarde."
+                return "⚠️ No obtuve una respuesta válida del asistente. Inténtalo más tarde."
 
             assistant_message = messages.data[0].content[0].text.value
 
@@ -165,6 +165,7 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
+
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
@@ -384,13 +385,10 @@ class CoachBot:
             if not user_message:
                 return
 
-            if "producto" in user_message.lower():
-                response = await self.process_product_query(chat_id, user_message)
-            else:
-                response = await self.process_text_message(update, context, user_message)
+            response = await self.process_text_message(update, context, user_message)
 
-            if response is None or not response.strip():
-                raise ValueError("La respuesta del asistente está vacía")
+            if not response or response.strip() == "⚠️ Ocurrió un error al procesar tu mensaje.":
+                return  # 🔥 Evita enviar un segundo mensaje de error si OpenAI ya falló
 
             await update.message.reply_text(response)
 
