@@ -469,7 +469,9 @@ class CoachBot:
             self.save_verified_user(chat_id, user_email, username)
             await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
 
-        except Exception as e:
-            logger.error(f"❌ Error verificando email para {chat_id}: {e}")
-                await update.message.reply_text("⚠️ Ocurrió un error verificando tu email")
+        await update.message.reply_text(
+    """⚠️ Ocurrió un error verificando tu email.
+Por favor, intenta de nuevo más tarde."""
+)
+
             
