@@ -112,7 +112,7 @@ class CoachBot:
         try:
             thread_id = await self.get_or_create_thread(chat_id)
             if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+                return "❌ No se pudo establecer conexión con el asistente."
 
         # Revisar si hay un `run` activo y esperar a que termine
         while True:
