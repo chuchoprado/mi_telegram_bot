@@ -471,4 +471,5 @@ class CoachBot:
 
         except Exception as e:
             logger.error(f"❌ Error verificando email para {chat_id}: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email
+                await update.message.reply_text("⚠️ Ocurrió un error verificando tu email")
+            
