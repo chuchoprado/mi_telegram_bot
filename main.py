@@ -222,7 +222,7 @@ class CoachBot:
             if "error" in products:
                 return "⚠️ Ocurrió un error al consultar los productos."
 
-            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])][...]
+            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])])
 
             if not product_list:
                 return "⚠️ No se encontraron productos."
@@ -471,49 +471,4 @@ class CoachBot:
 
         except Exception as e:
             logger.error(f"❌ Error verificando email para {chat_id}: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
-
-    async def is_user_whitelisted(self, email: str) -> bool:
-        try:
-            result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range='Usuarios!A:A'
-            ).execute()
-
-            values = result.get('values', [])
-            whitelist = [email[0].lower() for email in values if email]
-
-            return email.lower() in whitelist
-
-        except Exception as e:
-            logger.error(f"Error verificando whitelist: {e}")
-            return False
-
-       # Instanciar el bot
-       try:
-           bot = CoachBot()
-        except Exception as e:
-            logger.error(f"Error crítico inicializando el bot: {e}")
-            raise
-
-        @app.on_event("startup")
-
-  async def startup_event():
-       """Evento de inicio de la aplicación"""
-       try:
-            await bot.async_init()
-           logger.info("Aplicación iniciada correctamente")
-       except Exception as e:
-            logger.error(f"❌ Error al iniciar la aplicación: {e}")
-
-     @app.post("/webhook")
- async def webhook(request: Request):
-      """Webhook de Telegram"""
-     try:
-        data = await request.json()
-        update = Update.de_json(data, bot.telegram_app.bot)
-        await bot.telegram_app.update_queue.put(update)
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"❌ Error procesando webhook: {e}")
-        return {"status": "error", "message": str(e)}
+            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email
