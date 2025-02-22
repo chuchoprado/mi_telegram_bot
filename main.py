@@ -100,73 +100,73 @@ class CoachBot:
             logger.error(f"❌ Error creando thread para {chat_id}: {e}")
             return None
 
-        async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    """
-    Envía un mensaje al asistente de OpenAI y espera su respuesta.
+    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        """
+        Envía un mensaje al asistente de OpenAI y espera su respuesta.
 
-    Args:
-        chat_id (int): ID del chat de Telegram
-        user_message (str): Mensaje del usuario
+        Args:
+            chat_id (int): ID del chat de Telegram
+            user_message (str): Mensaje del usuario
 
-    Returns:
-        str: Respuesta del asistente
-    """
-    try:
-        thread_id = await self.get_or_create_thread(chat_id)
+        Returns:
+            str: Respuesta del asistente
+        """
+        try:
+            thread_id = await self.get_or_create_thread(chat_id)
 
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+            if not thread_id:
+                return "❌ No se pudo establecer conexión con el asistente."
 
-        await self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-
-        start_time = time.time()
-        while True:
-            run_status = await self.client.beta.threads.runs.retrieve(
+            await self.client.beta.threads.messages.create(
                 thread_id=thread_id,
-                run_id=run.id
+                role="user",
+                content=user_message
             )
 
-            if run_status.status == 'completed':
-                break
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                raise Exception(f"Run failed with status: {run_status.status}")
-            elif time.time() - start_time > 60:  # Timeout after 60 seconds
-                raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
 
-            await asyncio.sleep(1)
+            start_time = time.time()
+            while True:
+                run_status = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
 
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    raise Exception(f"Run failed with status: {run_status.status}")
+                elif time.time() - start_time > 60:  # Timeout after 60 seconds
+                    raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
 
-        if not messages.data or not messages.data[0].content:
-            return "⚠️ La respuesta del asistente está vacía. Inténtalo más tarde."
+                await asyncio.sleep(1)
 
-        assistant_message = messages.data[0].content[0].text.value
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
 
-        self.conversation_history.setdefault(chat_id, []).append({
-            "role": "assistant",
-            "content": assistant_message
-        })
+            if not messages.data or not messages.data[0].content:
+                return "⚠️ La respuesta del asistente está vacía. Inténtalo más tarde."
 
-        return assistant_message
+            assistant_message = messages.data[0].content[0].text.value
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
-        
-        async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+            self.conversation_history.setdefault(chat_id, []).append({
+                "role": "assistant",
+                "content": assistant_message
+            })
+
+            return assistant_message
+
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
+
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
         chat_id = update.effective_chat.id
         logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
@@ -490,6 +490,3 @@ async def webhook(request: Request):
         await bot.telegram_app.update_queue.put(update)
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"❌ Error procesando webhook: {e}")
-        return {"status": "error", "message": str(e)}
-        
