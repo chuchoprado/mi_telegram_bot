@@ -457,21 +457,23 @@ class CoachBot:
             return
 
         try:
-            if not await self.is_user_whitelisted(user_email):
-                await update.message.reply_text(
-                    "❌ Tu email no está en la lista autorizada. Contacta a soporte."
-                )
-                return
-
-            thread_id = await self.get_or_create_thread(chat_id)
-            self.user_threads[chat_id] = thread_id
-
-            self.save_verified_user(chat_id, user_email, username)
-            await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
-
+    # Your logic here, for example:
+    if not await self.is_user_whitelisted(user_email):
         await update.message.reply_text(
-    """⚠️ Ocurrió un error verificando tu email.
-Por favor, intenta de nuevo más tarde."""
-)
+            "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+        )
+        return
+
+    thread_id = await self.get_or_create_thread(chat_id)
+    self.user_threads[chat_id] = thread_id
+
+    self.save_verified_user(chat_id, user_email, username)
+    await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+    
+except Exception as e:
+    logger.error(f"Error verificando email: {e}")
+    await update.message.reply_text(
+        "⚠️ Ocurrió un error verificando tu email. Por favor, intenta de nuevo más tarde."
+    )
 
             
