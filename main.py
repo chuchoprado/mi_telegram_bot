@@ -490,5 +490,6 @@ async def webhook(request: Request):
         await bot.telegram_app.update_queue.put(update)
         return {"status": "ok"}
     except Exception as e:
-        logger.error(f"❌ Error procesando
+        logger.error(f"❌ Error procesando webhook: {e}")
+        return {"status": "error", "message": str(e)}
         
