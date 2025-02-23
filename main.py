@@ -133,7 +133,7 @@ class CoachBot:
             if not any(run.status == "in_progress" for run in active_runs.data):
                 break
             logger.info("⌛ Esperando que finalice el run activo antes de enviar nuevo mensaje...")
-            await asyncio.sleep(2)  # Espera de 2 segundos antes de reintentar
+            await asyncio.sleep(2)
 
         # 🔹 Enviar mensaje del usuario al asistente
         await self.client.beta.threads.messages.create(
@@ -160,7 +160,7 @@ class CoachBot:
                 break
             elif run_status.status in ["failed", "cancelled", "expired"]:
                 raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
-            elif time.time() - start_time > 60:  # Timeout de 60s
+            elif time.time() - start_time > 60:
                 raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
 
             await asyncio.sleep(2)
