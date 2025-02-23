@@ -17,6 +17,8 @@ from openai import AsyncOpenAI
 import speech_recognition as sr
 import requests
 from contextlib import closing
+from httpx import TimeoutException
+
 
 # Configurar logging
 logging.basicConfig(
@@ -234,11 +236,11 @@ class CoachBot:
 
 
     async def fetch_products(self, query):
-        url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-        params = {"query": query}
-        
-        logger.info(f"Consultando Google Sheets con: {params}")
+    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+    params = {"query": query}
+    retries = 3
 
+    for attempt in range(retries):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(url, params=params, follow_redirects=True)
@@ -249,8 +251,11 @@ class CoachBot:
             logger.info(f"Respuesta de Google Sheets: {response.text}")
             return response.json()
 
-        except httpx.TimeoutException:
+        except TimeoutException:
             logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                continue
             return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
 
         except Exception as e:
