@@ -415,30 +415,31 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los mensajes de voz"""
+    """Maneja los mensajes de voz"""
+    try:
+        chat_id = update.message.chat.id
+        voice_file = await update.message.voice.get_file()
+        voice_file_path = f"{chat_id}_voice_note.ogg"
+        await voice_file.download(voice_file_path)
+
+        recognizer = sr.Recognizer()
+        with sr.AudioFile(voice_file_path) as source:
+            audio = recognizer.record(source)
+
         try:
-            chat_id = update.message.chat.id
-            voice_file = await update.message.voice.get_file()
-            voice_file_path = f"{chat_id}_voice_note.ogg"
-            await voice_file.download(voice_file_path)
+            user_message = recognizer.recognize_google(audio, language='es-ES')
+            logger.info(f"Transcripción de voz: {user_message}")
+            response = await self.process_text_message(update, context, user_message)
+            await update.message.reply_text(response)
+        except sr.UnknownValueError:
+            await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
+        except sr.RequestError as e:
+            logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
 
-            recognizer = sr.Recognizer()
-            with sr.AudioFile(voice_file_path) as source:
-                audio = recognizer.record(source)
-
-            try:
-                user_message = recognizer.recognize_google(audio, language='es-ES')
-                logger.info(f"Transcripción de voz: {user_message}")
-                await self.process_text_message(update, context, user_message)
-            except sr.UnknownValueError:
-                await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
-            except sr.RequestError as e:
-                logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
-                await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
-
-        except Exception as e:
-            logger.error(f"Error manejando mensaje de voz: {e}")
-            await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
+    except Exception as e:
+        logger.error(f"Error manejando mensaje de voz: {e}")
+        await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Verifica el email del usuario"""
