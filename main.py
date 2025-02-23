@@ -103,76 +103,70 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        """Envía un mensaje al asistente de OpenAI y espera su respuesta."""
-        try:
-            thread_id = await self.get_or_create_thread(chat_id)
-            if not thread_id:
-                return "❌ No se pudo establecer conexión con el asistente."
+    try:
+        thread_id = await self.get_or_create_thread(chat_id)
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
 
-            # Verificar si hay un `run` activo antes de continuar
-            active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
-            if any(run.status == "in_progress" for run in active_runs.data):
-                return "⏳ El asistente aún está procesando la última solicitud. Intenta de nuevo en unos segundos."
+        active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
+        if any(run.status == "in_progress" for run in active_runs.data):
+            return "⏳ El asistente aún está procesando la última solicitud. Intenta de nuevo en unos segundos."
 
-            # Enviar mensaje del usuario
-            await self.client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_message
-            )
+        await self.client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
 
-            # Iniciar ejecución del asistente
-            run = await self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+        run = await self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+        )
 
-            # Esperar respuesta con mejor manejo de errores
-            start_time = time.time()
-            retries = 3  # Number of retries for fetching the response
-            while True:
-                await asyncio.sleep(5)  # ⏳ Mayor tiempo entre solicitudes
-                try:
-                    run_status = await self.client.beta.threads.runs.retrieve(
-                        thread_id=thread_id,
-                        run_id=run.id
-                    )
+        start_time = time.time()
+        retries = 3
+        while True:
+            await asyncio.sleep(5)
+            try:
+                run_status = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
 
-                    if run_status.status == "completed":
-                        break
-                    elif run_status.status in ["failed", "cancelled", "expired"]:
-                        raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
-                    elif time.time() - start_time > 60:  # 🔥 Reducir timeout de 90s a 60s
-                        raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
-                except TimeoutError as e:
-                    logger.error(f"❌ TimeoutError: {e}")
-                    if retries > 0:
-                        retries -= 1
-                        logger.info(f"Retrying... {retries} retries left")
-                        continue
-                    else:
-                        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
+                if run_status.status == "completed":
+                    break
+                elif run_status.status in ["failed", "cancelled", "expired"]:
+                    raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
+                elif time.time() - start_time > 60:
+                    raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
+            except TimeoutError as e:
+                logger.error(f"❌ TimeoutError: {e}")
+                if retries > 0:
+                    retries -= 1
+                    logger.info(f"Retrying... {retries} retries left")
+                    continue
+                else:
+                    return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
-            # Obtener la respuesta del asistente
-            messages = await self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=1
-            )
+        messages = await self.client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=1
+        )
 
-            if not messages.data or not messages.data[0].content:
-                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+        if not messages.data or not messages.data[0].content:
+            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-            assistant_message = messages.data[0].content[0].text.value.strip()
-            return assistant_message if assistant_message else "⚠️ No obtuve una respuesta válida del asistente."
+        assistant_message = messages.data[0].content[0].text.value.strip()
+        return assistant_message if assistant_message else "⚠️ No obtuve una respuesta válida del asistente."
 
-        except TimeoutError as e:
-            logger.error(f"❌ TimeoutError: {e}")
-            return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
+    except TimeoutError as e:
+        logger.error(f"❌ TimeoutError: {e}")
+        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje: {e}")
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+    except Exception as e:
+        logger.error(f"❌ Error procesando mensaje: {e}")
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
@@ -222,31 +216,31 @@ class CoachBot:
 
 
     async def fetch_products(self, query):
-        url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-        params = {"query": query}
-        retries = 3
+    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+    params = {"query": query}
+    retries = 3
 
-        for attempt in range(retries):
-            try:
-                async with httpx.AsyncClient(timeout=10) as client:
-                    response = await client.get(url, params=params, follow_redirects=True)
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(url, params=params, follow_redirects=True)
 
-                if response.status_code != 200:
-                    raise Exception(f"Error en Google Sheets API: {response.status_code}")
+            if response.status_code != 200:
+                raise Exception(f"Error en Google Sheets API: {response.status_code}")
 
-                logger.info(f"Respuesta de Google Sheets: {response.text}")
-                return response.json()
+            logger.info(f"Respuesta de Google Sheets: {response.text}")
+            return response.json()
 
-            except TimeoutException:
-                logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
-                if attempt < retries - 1:
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
-                    continue
-                return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
+        except TimeoutException:
+            logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
+            if attempt < retries - 1:
+                await asyncio.sleep(2 ** attempt)
+                continue
+            return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
 
-            except Exception as e:
-                logger.error(f"❌ Error consultando Google Sheets: {e}")
-                return {"error": "Error consultando Google Sheets"}
+        except Exception as e:
+            logger.error(f"❌ Error consultando Google Sheets: {e}")
+            return {"error": "Error consultando Google Sheets"}
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
