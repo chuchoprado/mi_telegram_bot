@@ -353,7 +353,45 @@ class CoachBot:
             await update.message.reply_text(
                 "❌ Ocurrió un error procesando tu mensaje. Por favor, intenta de nuevo."
             )
+            
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
+    """
+    Procesa los mensajes de texto recibidos y determina la respuesta apropiada.
+    
+    Args:
+        update (Update): Objeto update de Telegram
+        context (ContextTypes.DEFAULT_TYPE): Contexto del mensaje
+        user_message (str): Mensaje del usuario
+        
+    Returns:
+        str: Respuesta al usuario
+    """
+    try:
+        chat_id = update.message.chat.id
+        
+        # Indicar al usuario que el bot está escribiendo
+        await context.bot.send_chat_action(
+            chat_id=chat_id,
+            action=ChatAction.TYPING
+        )
 
+        # Verificar si es una consulta de productos
+        if any(keyword in user_message.lower() for keyword in ['producto', 'comprar', 'precio', 'costo']):
+            return await self.process_product_query(chat_id, user_message)
+
+        # Para otros mensajes, usar el asistente de OpenAI
+        response = await self.send_message_to_assistant(chat_id, user_message)
+        
+        # Guardar la conversación en la base de datos
+        self.save_conversation(chat_id, "user", user_message)
+        self.save_conversation(chat_id, "assistant", response)
+        
+        return response
+
+    except Exception as e:
+        logger.error(f"Error en process_text_message: {e}")
+        return "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
+        
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes recibidos después de la verificación."""
         try:
