@@ -355,17 +355,16 @@ class CoachBot:
             )
             
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-    """
-    Procesa los mensajes de texto recibidos y determina la respuesta apropiada.
+        """Procesa los mensajes de texto recibidos y determina la respuesta apropiada.
     
-    Args:
+        Args:
         update (Update): Objeto update de Telegram
         context (ContextTypes.DEFAULT_TYPE): Contexto del mensaje
         user_message (str): Mensaje del usuario
         
-    Returns:
+        Returns:
         str: Respuesta al usuario
-    """
+        """
     try:
         chat_id = update.message.chat.id
         
