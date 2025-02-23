@@ -189,10 +189,10 @@ class CoachBot:
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes de voz recibidos por el usuario"""
         try:
-        chat_id = update.message.chat.id
-        voice_file = await update.message.voice.get_file()
-        voice_file_path = f"{chat_id}_voice_note.ogg"
-        await voice_file.download(voice_file_path)
+            chat_id = update.message.chat.id
+            voice_file = await update.message.voice.get_file()
+            voice_file_path = f"{chat_id}_voice_note.ogg"
+            await voice_file.download(voice_file_path)
 
         recognizer = sr.Recognizer()
         with sr.AudioFile(voice_file_path) as source:
