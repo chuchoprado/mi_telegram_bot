@@ -415,7 +415,7 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja los mensajes de voz"""
+        """Maneja los mensajes de voz recibidos por el usuario"""
     try:
         chat_id = update.message.chat.id
         voice_file = await update.message.voice.get_file()
@@ -428,18 +428,22 @@ async def process_text_message(self, update: Update, context: ContextTypes.DEFAU
 
         try:
             user_message = recognizer.recognize_google(audio, language='es-ES')
-            logger.info(f"Transcripción de voz: {user_message}")
+            logger.info(f"📢 Transcripción de voz: {user_message}")
+
+            # Llamar a la función que procesa mensajes de texto
             response = await self.process_text_message(update, context, user_message)
+
             await update.message.reply_text(response)
         except sr.UnknownValueError:
             await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
         except sr.RequestError as e:
-            logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
+            logger.error(f"❌ Error en el reconocimiento de voz de Google: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
 
     except Exception as e:
-        logger.error(f"Error manejando mensaje de voz: {e}")
+        logger.error(f"❌ Error manejando mensaje de voz: {e}")
         await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
+
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Verifica el email del usuario"""
