@@ -216,31 +216,31 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
 
 
     async def fetch_products(self, query):
-    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-    params = {"query": query}
-    retries = 3
+        url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+        params = {"query": query}
+        retries = 3
 
-    for attempt in range(retries):
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(url, params=params, follow_redirects=True)
+        for attempt in range(retries):
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.get(url, params=params, follow_redirects=True)
 
-            if response.status_code != 200:
-                raise Exception(f"Error en Google Sheets API: {response.status_code}")
+                if response.status_code != 200:
+                    raise Exception(f"Error en Google Sheets API: {response.status_code}")
 
-            logger.info(f"Respuesta de Google Sheets: {response.text}")
-            return response.json()
+                logger.info(f"Respuesta de Google Sheets: {response.text}")
+                return response.json()
 
-        except TimeoutException:
-            logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
-            if attempt < retries - 1:
-                await asyncio.sleep(2 ** attempt)
-                continue
-            return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
+            except TimeoutException:
+                logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
+                if attempt < retries - 1:
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
 
-        except Exception as e:
-            logger.error(f"❌ Error consultando Google Sheets: {e}")
-            return {"error": "Error consultando Google Sheets"} 
+            except Exception as e:
+                logger.error(f"❌ Error consultando Google Sheets: {e}")
+                return {"error": "Error consultando Google Sheets"}
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
