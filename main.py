@@ -116,13 +116,11 @@ class CoachBot:
             raise
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja el comando /start"""
+       """Maneja el comando /start"""
     try:
         chat_id = update.message.chat.id
         if chat_id in self.verified_users:
-            await update.message.reply_text(
-                "👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?"
-            )
+            await update.message.reply_text("👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?")
         else:
             await update.message.reply_text(
                 "👋 ¡Hola! Por favor, proporciona tu email para comenzar.\n"
