@@ -120,7 +120,7 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    try:
+        try:
         thread_id = await self.get_or_create_thread(chat_id)
         if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
@@ -179,11 +179,11 @@ class CoachBot:
         assistant_message = messages.data[0].content[0].text.value.strip()
         return assistant_message if assistant_message else "⚠️ No obtuve una respuesta válida del asistente."
 
-    except TimeoutError as e:
+        except TimeoutError as e:
         logger.error(f"❌ TimeoutError: {e}")
         return "⏳ OpenAI tardó demasiado en responder. Inténtalo más tarde."
 
-    except Exception as e:
+        except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
         return "⚠️ Ocurrió un error al procesar tu mensaje."
 
