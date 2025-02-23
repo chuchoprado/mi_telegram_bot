@@ -120,9 +120,9 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    """Envía un mensaje al asistente de OpenAI y espera su respuesta."""
+        """Envía un mensaje al asistente de OpenAI y espera su respuesta."""
 
-    try:
+        try:
         thread_id = await self.get_or_create_thread(chat_id)
         if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
