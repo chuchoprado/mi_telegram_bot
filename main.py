@@ -447,35 +447,74 @@ class CoachBot:
             await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Verifica el email del usuario"""
-        chat_id = update.message.chat.id
-        user_email = update.message.text.strip().lower()
-        username = update.message.from_user.username or "Unknown"
+    """Verifica el email del usuario"""
+    chat_id = update.message.chat.id
+    user_email = update.message.text.strip().lower()
+    username = update.message.from_user.username or "Unknown"
 
-        if not '@' in user_email or not '.' in user_email:
-            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
-            return
-
-       try:
-    # Verificar si el usuario está en la lista blanca
-    if not await self.is_user_whitelisted(user_email):
-        await update.message.reply_text(
-            "❌ Tu email no está en la lista autorizada. Contacta a soporte."
-        )
+    if "@" not in user_email or "." not in user_email:
+        await update.message.reply_text("❌ Por favor, proporciona un email válido.")
         return
 
-    # Crear o recuperar un thread para el usuario
-    thread_id = await self.get_or_create_thread(chat_id)
-    self.user_threads[chat_id] = thread_id
+    try:
+        # Verificar si el usuario está en la lista blanca
+        if not await self.is_user_whitelisted(user_email):
+            await update.message.reply_text(
+                "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+            )
+            return
 
-    # Guardar el usuario verificado en la base de datos
-    self.save_verified_user(chat_id, user_email, username)
-    await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
-    
+        thread_id = await self.get_or_create_thread(chat_id)
+        self.user_threads[chat_id] = thread_id
+
+        self.save_verified_user(chat_id, user_email, username)
+        await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+
+    except Exception as e:
+        logger.error(f"❌ Error verificando email para {chat_id}: {e}")
+        await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+    async def is_user_whitelisted(self, email: str) -> bool:
+        try:
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.SPREADSHEET_ID,
+                range='Usuarios!A:A'
+            ).execute()
+
+            values = result.get('values', [])
+            whitelist = [email[0].lower() for email in values if email]
+
+            return email.lower() in whitelist
+
+        except Exception as e:
+            logger.error(f"Error verificando whitelist: {e}")
+            return False
+
+# Instanciar el bot
+try:
+    bot = CoachBot()
 except Exception as e:
-    logger.error(f"Error verificando email: {e}")
-    await update.message.reply_text(
-        "⚠️ Ocurrió un error verificando tu email. Por favor, intenta de nuevo más tarde."
-    )
+    logger.error(f"Error crítico inicializando el bot: {e}")
+    raise
+
+@app.on_event("startup")
+async def startup_event():
+    """Evento de inicio de la aplicación"""
+    try:
+        await bot.async_init()
+        logger.info("Aplicación iniciada correctamente")
+    except Exception as e:
+        logger.error(f"❌ Error al iniciar la aplicación: {e}")
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    """Webhook de Telegram"""
+    try:
+        data = await request.json()
+        update = Update.de_json(data, bot.telegram_app.bot)
+        await bot.telegram_app.update_queue.put(update)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error(f"❌ Error procesando webhook: {e}")
+        return {"status": "error", "message": str(e)}
 
             
