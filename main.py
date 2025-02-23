@@ -136,17 +136,17 @@ class CoachBot:
             await asyncio.sleep(2)
 
         # 🔹 Enviar mensaje del usuario al asistente
-        await self.client.beta.threads.messages.create(
+            await self.client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message
-        )
+            )
 
         # 🔹 Iniciar ejecución del asistente
         run = await self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant_id
-        )
+            )
 
         # 🔹 Esperar la respuesta con timeout de 60s
         start_time = time.time()
@@ -154,7 +154,7 @@ class CoachBot:
             run_status = await self.client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
                 run_id=run.id
-            )
+                )
 
             if run_status.status == "completed":
                 break
@@ -166,11 +166,11 @@ class CoachBot:
             await asyncio.sleep(2)
 
         # 🔹 Obtener la respuesta del asistente
-        messages = await self.client.beta.threads.messages.list(
+            messages = await self.client.beta.threads.messages.list(
             thread_id=thread_id,
             order="desc",
             limit=1
-        )
+            )
 
         if not messages.data or not messages.data[0].content:
             logger.warning("⚠️ OpenAI devolvió una respuesta vacía.")
