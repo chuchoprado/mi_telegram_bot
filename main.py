@@ -129,19 +129,29 @@ class CoachBot:
 
             # Esperar respuesta con mejor manejo de errores
             start_time = time.time()
+            retries = 3  # Number of retries for fetching the response
             while True:
                 await asyncio.sleep(5)  # ⏳ Mayor tiempo entre solicitudes
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
+                try:
+                    run_status = await self.client.beta.threads.runs.retrieve(
+                        thread_id=thread_id,
+                        run_id=run.id
+                    )
 
-                if run_status.status == "completed":
-                    break
-                elif run_status.status in ["failed", "cancelled", "expired"]:
-                    raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
-                elif time.time() - start_time > 60:  # 🔥 Reducir timeout de 90s a 60s
-                    raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
+                    if run_status.status == "completed":
+                        break
+                    elif run_status.status in ["failed", "cancelled", "expired"]:
+                        raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
+                    elif time.time() - start_time > 60:  # 🔥 Reducir timeout de 90s a 60s
+                        raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
+                except TimeoutError as e:
+                    logger.error(f"❌ TimeoutError: {e}")
+                    if retries > 0:
+                        retries -= 1
+                        logger.info(f"Retrying... {retries} retries left")
+                        continue
+                    else:
+                        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
             # Obtener la respuesta del asistente
             messages = await self.client.beta.threads.messages.list(
