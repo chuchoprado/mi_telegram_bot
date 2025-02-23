@@ -332,7 +332,7 @@ async def is_user_whitelisted(self, email: str) -> bool:
         return False
 
     try:
-        result = await self.sheets_service.spreadsheets().values().get(
+        result = self.sheets_service.spreadsheets().values().get(
             spreadsheetId=self.SPREADSHEET_ID,
             range='Usuarios!A:A'
         ).execute()
@@ -386,9 +386,6 @@ async def webhook(request: Request):
             raise HTTPException(status_code=400, detail="❌ Datos de solicitud no válidos.")
 
         update = Update.de_json(data, bot.telegram_app.bot)
-        if not update:
-            raise HTTPException(status_code=400, detail="❌ Actualización de Telegram no válida.")
-
         await bot.telegram_app.update_queue.put(update)
         return {"status": "ok"}
 
