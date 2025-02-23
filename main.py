@@ -120,9 +120,9 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    """Envía un mensaje al asistente de OpenAI y espera su respuesta."""
+        """Envía un mensaje al asistente de OpenAI y espera su respuesta."""
 
-    try:
+        try:
         thread_id = await self.get_or_create_thread(chat_id)  # ✅ CORRECTO
         if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
@@ -176,16 +176,16 @@ class CoachBot:
             logger.warning("⚠️ OpenAI devolvió una respuesta vacía.")
             return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-        assistant_message = messages.data[0].content[0].text.value.strip()
-        return assistant_message if assistant_message else "⚠️ No obtuve una respuesta válida del asistente."
+            assistant_message = messages.data[0].content[0].text.value.strip()
+            return assistant_message if assistant_message else "⚠️ No obtuve una respuesta válida del asistente."
 
-    except TimeoutError as e:
-        logger.error(f"❌ TimeoutError: {e}")
-        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
+        except TimeoutError as e:
+            logger.error(f"❌ TimeoutError: {e}")
+            return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
