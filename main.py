@@ -187,15 +187,14 @@ class CoachBot:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-        async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-           """Procesa mensajes de texto del usuario."""
-
-           chat_id = update.effective_chat.id
-           logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
+        
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
+        """Procesa mensajes de texto del usuario."""
+        chat_id = update.effective_chat.id
+        logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
 
         try:
             await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-
             response = await self.send_message_to_assistant(chat_id, user_message)
 
             if response is None or not response.strip():
