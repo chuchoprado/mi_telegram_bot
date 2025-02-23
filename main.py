@@ -321,94 +321,53 @@ class CoachBot:
 async def is_user_whitelisted(self, email: str) -> bool:
 
         """
-
         Check if a user's email is in the whitelist.
-
-        
-
         Args:
-
             email: User's email address
-
-            
-
         Returns:
-
             bool: True if email is whitelisted, False otherwise
-
         """
-
         if not email:
-
             return False
-
-            
-
         try:
-
             result = await self.sheets_service.spreadsheets().values().get(
-
                 spreadsheetId=self.SPREADSHEET_ID,
-
                 range='Usuarios!A:A'
-
-            ).execute()
-
-            
+            ).execute()     
 
             values = result.get('values', [])
-
             if not values:
-
                 logger.warning("Whitelist is empty")
-
                 return False
-
-                
-
+   
             whitelist = [row[0].lower().strip() for row in values if row and row[0]]
-
             return email.lower().strip() in whitelist
 
-            
-
         except Exception as e:
-
             logger.error(f"Error checking whitelist: {str(e)}", exc_info=True)
-
             return False
 
 # Initialize bot with proper error handling
 
 def init_bot() -> Optional[CoachBot]:
-
     try:
-
         bot = CoachBot()
-
         logger.info("Bot initialized successfully")
-
         return bot
 
     except Exception as e:
-
         logger.error(f"Critical error initializing bot: {str(e)}", exc_info=True)
-
         return None
 
 bot = init_bot()
-
 if not bot:
-
     raise RuntimeError("Failed to initialize bot")
 
 @app.on_event("startup")
-
 async def startup_event():
     """Application startup event handler"""
 
     try:
-
         await bot.async_init()
         logger.info("Application started successfully")
 
@@ -433,9 +392,7 @@ async def webhook(request: Request):
 
         update = Update.de_json(data, bot.telegram_app.bot)
         if not update:
-            raise HTTPException(status_code=400, detail="Invalid Telegram update")
-
-            
+            raise HTTPException(status_code=400, detail="Invalid Telegram update")          
 
         await bot.telegram_app.update_queue.put(update)
         return {"status": "ok"}
