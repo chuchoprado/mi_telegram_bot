@@ -123,8 +123,8 @@ class CoachBot:
         """Envía un mensaje al asistente de OpenAI y espera su respuesta."""
 
         try:
-        thread_id = await self.get_or_create_thread(chat_id)  # ✅ CORRECTO
-        if not thread_id:
+            thread_id = await self.get_or_create_thread(chat_id)  # ✅ CORRECTO
+            if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
 
         # 🔹 Esperar a que no haya `run` activo antes de continuar
