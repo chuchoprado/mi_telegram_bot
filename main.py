@@ -166,36 +166,39 @@ class CoachBot:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
-        """Procesa mensajes de texto del usuario."""
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
+       """Procesa los mensajes de texto recibidos."""
+       try:
+        chat_id = update.message.chat.id
 
-        chat_id = update.effective_chat.id
-        logger.info(f"📩 Mensaje recibido del usuario {chat_id}: {user_message}")
+        if not user_message.strip():
+            return "⚠️ No se recibió un mensaje válido."
 
-        try:
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+        await context.bot.send_chat_action(
+            chat_id=chat_id,
+            action=ChatAction.TYPING
+        )
 
-            response = await self.send_message_to_assistant(chat_id, user_message)
+        # Verificar consulta de productos
+        if any(keyword in user_message.lower() for keyword in ['producto', 'comprar', 'precio', 'costo']):
+            return await self.process_product_query(chat_id, user_message)
 
-            if response is None or not response.strip():
-                raise ValueError("La respuesta del asistente está vacía")
+        # Usar asistente de OpenAI
+        response = await self.send_message_to_assistant(chat_id, user_message)
 
-            await update.message.reply_text(response)
+        if not response.strip():
+            logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
+            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-        except openai.OpenAIError as e:
-            logger.error(f"❌ Error en OpenAI: {e}")
-            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+        # Guardar conversación solo si hay respuesta válida
+        self.save_conversation(chat_id, "user", user_message)
+        self.save_conversation(chat_id, "assistant", response)
 
-        except ValueError as e:
-            logger.error(f"⚠️ Error de validación: {e}")
-            await update.message.reply_text("⚠️ La respuesta del asistente está vacía. Inténtalo más tarde.")
+        return response
 
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje: {e}")
-            await update.message.reply_text(
-                "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
-            )
-
+    except Exception as e:
+        logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
     
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
