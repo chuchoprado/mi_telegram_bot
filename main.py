@@ -380,27 +380,27 @@ class CoachBot:
             )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja los mensajes recibidos después de la verificación."""
-    try:
-        chat_id = update.message.chat.id
-        user_message = update.message.text.strip()
-        if not user_message:
-            return
+        """Maneja los mensajes recibidos después de la verificación."""
+        try:
+            chat_id = update.message.chat.id
+            user_message = update.message.text.strip()
+            if not user_message:
+                return
 
-        response = await self.process_text_message(update, context, user_message)
+            response = await self.process_text_message(update, context, user_message)
 
-        if not response or response.strip() in ["⚠️ Ocurrió un error al procesar tu mensaje.", "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."]:
-            return  # 🔥 Evita enviar un segundo mensaje de error si OpenAI ya falló
+            if not response or response.strip() in ["⚠️ Ocurrió un error al procesar tu mensaje.", "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."]:
+                return  # 🔥 Evita enviar un segundo mensaje de error si OpenAI ya falló
 
-        await update.message.reply_text(response)
+            await update.message.reply_text(response)
 
-    except openai.OpenAIError as e:
-        logger.error(f"❌ Error en OpenAI: {e}")
-        await update.message.reply_text("❌ Hubo un problema con OpenAI.")
+        except openai.OpenAIError as e:
+            logger.error(f"❌ Error en OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
 
-    except Exception as e:
-        logger.error(f"⚠️ Error inesperado: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
+        except Exception as e:
+            logger.error(f"⚠️ Error inesperado: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
