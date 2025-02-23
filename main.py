@@ -240,7 +240,7 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
 
         except Exception as e:
             logger.error(f"❌ Error consultando Google Sheets: {e}")
-            return {"error": "Error consultando Google Sheets"}
+            return {"error": "Error consultando Google Sheets"} 
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
