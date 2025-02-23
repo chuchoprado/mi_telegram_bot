@@ -116,22 +116,22 @@ class CoachBot:
             raise
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        try:
-            chat_id = update.message.chat.id
-            if chat_id in self.verified_users:
-                await update.message.reply_text("👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?")
-            else:
-                await update.message.reply_text(
-                    "👋 ¡Hola! Por favor, proporciona tu email para comenzar.
-
-"
-                    "📧 Debe ser un email autorizado para usar el servicio."
-                )
-            chat_id = update.message.chat.id
-            await update.message.reply_text("👋 ¡Bienvenido! ¿En qué puedo ayudarte hoy?")
-        except Exception as e:
-            logger.error(f"Error en start_command: {e}")
-            await update.message.reply_text("❌ Ocurrió un error. Por favor, intenta de nuevo.")
+    """Maneja el comando /start"""
+    try:
+        chat_id = update.message.chat.id
+        if chat_id in self.verified_users:
+            await update.message.reply_text(
+                "👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?"
+            )
+        else:
+            await update.message.reply_text(
+                "👋 ¡Hola! Por favor, proporciona tu email para comenzar.\n"
+                "📧 Debe ser un email autorizado para usar el servicio."
+            )
+        logger.info(f"Comando /start ejecutado por chat_id: {chat_id}")
+    except Exception as e:
+        logger.error(f"Error en start_command: {e}")
+        await update.message.reply_text("❌ Ocurrió un error. Por favor, intenta de nuevo.")
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
     """Envía un mensaje al asistente de OpenAI y espera su respuesta."""
