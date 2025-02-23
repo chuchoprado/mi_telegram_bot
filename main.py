@@ -221,7 +221,10 @@ class CoachBot:
             if "error" in products:
                 return "⚠️ Ocurrió un error al consultar los productos."
 
-            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])][...]
+            product_list = "\n".join(
+                [f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})"
+                 for p in products.get("data", [])]
+            )
 
             if not product_list:
                 return "⚠️ No se encontraron productos."
