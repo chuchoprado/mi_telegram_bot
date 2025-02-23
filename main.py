@@ -18,6 +18,8 @@ import speech_recognition as sr
 import requests
 from contextlib import closing
 from httpx import TimeoutException
+from typing import Optional
+from fastapi import Request, HTTPException
 
 # Configurar logging
 logging.basicConfig(
@@ -316,51 +318,136 @@ class CoachBot:
             logger.error(f"❌ Error verificando email para {chat_id}: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
 
-    async def is_user_whitelisted(self, email: str) -> bool:
-        try:
-            result = self.sheets_service.spreadsheets().values().get(
-                spreadsheetId=self.SPREADSHEET_ID,
-                range='Usuarios!A:A'
-            ).execute()
+async def is_user_whitelisted(self, email: str) -> bool:
 
-            values = result.get('values', [])
-            whitelist = [email[0].lower() for email in values if email]
+        """
 
-            return email.lower() in whitelist
+        Check if a user's email is in the whitelist.
 
-        except Exception as e:
-            logger.error(f"Error verificando whitelist: {e}")
+        
+
+        Args:
+
+            email: User's email address
+
+            
+
+        Returns:
+
+            bool: True if email is whitelisted, False otherwise
+
+        """
+
+        if not email:
+
             return False
 
-# Instanciar el bot
-try:
-    bot = CoachBot()
-except Exception as e:
-    logger.error(f"Error crítico inicializando el bot: {e}")
-    raise
+            
+
+        try:
+
+            result = await self.sheets_service.spreadsheets().values().get(
+
+                spreadsheetId=self.SPREADSHEET_ID,
+
+                range='Usuarios!A:A'
+
+            ).execute()
+
+            
+
+            values = result.get('values', [])
+
+            if not values:
+
+                logger.warning("Whitelist is empty")
+
+                return False
+
+                
+
+            whitelist = [row[0].lower().strip() for row in values if row and row[0]]
+
+            return email.lower().strip() in whitelist
+
+            
+
+        except Exception as e:
+
+            logger.error(f"Error checking whitelist: {str(e)}", exc_info=True)
+
+            return False
+
+# Initialize bot with proper error handling
+
+def init_bot() -> Optional[CoachBot]:
+
+    try:
+
+        bot = CoachBot()
+
+        logger.info("Bot initialized successfully")
+
+        return bot
+
+    except Exception as e:
+
+        logger.error(f"Critical error initializing bot: {str(e)}", exc_info=True)
+
+        return None
+
+bot = init_bot()
+
+if not bot:
+
+    raise RuntimeError("Failed to initialize bot")
 
 @app.on_event("startup")
+
 async def startup_event():
-    """Evento de inicio de la aplicación"""
+    """Application startup event handler"""
+
     try:
+
         await bot.async_init()
-        logger.info("Aplicación iniciada correctamente")
+        logger.info("Application started successfully")
+
     except Exception as e:
-        logger.error(f"Error al iniciar la aplicación: {e}")
-        raise
+        logger.error(f"❌ Error starting application: {str(e)}", exc_info=True)
+        raise RuntimeError(f"Failed to start application: {str(e)}")
 
 @app.post("/webhook")
+
 async def webhook(request: Request):
-    """Webhook de Telegram"""
+    """Telegram webhook handler"""
     try:
+        if not bot:
+            raise HTTPException(status_code=500, detail="Bot not initialized")
+
+            
         data = await request.json()
+        if not data:
+            raise HTTPException(status_code=400, detail="Invalid request data")
+
+            
+
         update = Update.de_json(data, bot.telegram_app.bot)
+        if not update:
+            raise HTTPException(status_code=400, detail="Invalid Telegram update")
+
+            
+
         await bot.telegram_app.update_queue.put(update)
         return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"Error procesando webhook: {e}")
-        return {"status": "error", "message": str(e)}
 
+    except ValueError as e:
+        logger.error(f"Invalid JSON in webhook request: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=400, detail="Invalid JSON format")
+
+    except Exception as e:
+        logger.error(f"❌ Error processing webhook: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+        
 if __name__ == "__main__":
     import uvicorn
     
