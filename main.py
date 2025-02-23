@@ -354,18 +354,18 @@ class CoachBot:
                 "❌ Ocurrió un error procesando tu mensaje. Por favor, intenta de nuevo."
             )
             
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-        """Procesa los mensajes de texto recibidos y determina la respuesta apropiada.
+async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
+    """Procesa los mensajes de texto recibidos y determina la respuesta apropiada.
     
-        Args:
-        update (Update): Objeto update de Telegram
-        context (ContextTypes.DEFAULT_TYPE): Contexto del mensaje
-        user_message (str): Mensaje del usuario
+    Args:
+    update (Update): Objeto update de Telegram
+    context (ContextTypes.DEFAULT_TYPE): Contexto del mensaje
+    user_message (str): Mensaje del usuario
         
-        Returns:
-        str: Respuesta al usuario
-        """
-    try:
+    Returns:
+    str: Respuesta al usuario
+    """
+    try:  # ✅ CORREGIDO: `try:` correctamente indentado
         chat_id = update.message.chat.id
         
         # Indicar al usuario que el bot está escribiendo
