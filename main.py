@@ -447,32 +447,33 @@ class CoachBot:
             await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
 
     async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Verifica el email del usuario"""
-    chat_id = update.message.chat.id
-    user_email = update.message.text.strip().lower()
-    username = update.message.from_user.username or "Unknown"
+        """Verifica el email del usuario"""
+        chat_id = update.message.chat.id
+        user_email = update.message.text.strip().lower()
+        username = update.message.from_user.username or "Unknown"
 
-    if "@" not in user_email or "." not in user_email:
-        await update.message.reply_text("❌ Por favor, proporciona un email válido.")
-        return
-
-    try:
-        # Verificar si el usuario está en la lista blanca
-        if not await self.is_user_whitelisted(user_email):
-            await update.message.reply_text(
-                "❌ Tu email no está en la lista autorizada. Contacta a soporte."
-            )
+        if "@" not in user_email or "." not in user_email:
+            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
             return
 
-        thread_id = await self.get_or_create_thread(chat_id)
-        self.user_threads[chat_id] = thread_id
+        try:
+            # Verificar si el usuario está en la lista blanca
+            if not await self.is_user_whitelisted(user_email):
+                await update.message.reply_text(
+                    "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+                )
+                return
 
-        self.save_verified_user(chat_id, user_email, username)
-        await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+            thread_id = await self.get_or_create_thread(chat_id)
+            self.user_threads[chat_id] = thread_id
 
-    except Exception as e:
-        logger.error(f"❌ Error verificando email para {chat_id}: {e}")
-        await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+            self.save_verified_user(chat_id, user_email, username)
+            await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+
+        except Exception as e:
+            logger.error(f"❌ Error verificando email para {chat_id}: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+            
     async def is_user_whitelisted(self, email: str) -> bool:
         try:
             result = self.sheets_service.spreadsheets().values().get(
