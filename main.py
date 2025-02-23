@@ -19,7 +19,6 @@ import requests
 from contextlib import closing
 from httpx import TimeoutException
 
-
 # Configurar logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -63,8 +62,26 @@ class CoachBot:
         self.telegram_app = Application.builder().token(self.TELEGRAM_TOKEN).build()
 
         self._init_db()
-        self.setup_handlers()
+        self.setup_handlers()  # Move this call after the method definition
         self._init_sheets()
+
+    def setup_handlers(self):
+        """Configura los manejadores de comandos y mensajes"""
+        try:
+            self.telegram_app.add_handler(CommandHandler("start", self.start_command))
+            self.telegram_app.add_handler(CommandHandler("help", self.help_command))
+            self.telegram_app.add_handler(MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                self.route_message
+            ))
+            self.telegram_app.add_handler(MessageHandler(
+                filters.VOICE,
+                self.handle_voice_message
+            ))
+            logger.info("Handlers configurados correctamente")
+        except Exception as e:
+            logger.error(f"Error en setup_handlers: {e}")
+            raise
 
     def _init_db(self):
         """Inicializar la base de datos y crear las tablas necesarias."""
@@ -102,71 +119,71 @@ class CoachBot:
             logger.error(f"❌ Error creando thread para {chat_id}: {e}")
             return None
 
-async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    try:
-        thread_id = await self.get_or_create_thread(chat_id)
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        try:
+            thread_id = await self.get_or_create_thread(chat_id)
+            if not thread_id:
+                return "❌ No se pudo establecer conexión con el asistente."
 
-        active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
-        if any(run.status == "in_progress" for run in active_runs.data):
-            return "⏳ El asistente aún está procesando la última solicitud. Intenta de nuevo en unos segundos."
+            active_runs = await self.client.beta.threads.runs.list(thread_id=thread_id)
+            if any(run.status == "in_progress" for run in active_runs.data):
+                return "⏳ El asistente aún está procesando la última solicitud. Intenta de nuevo en unos segundos."
 
-        await self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
+            await self.client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=user_message
+            )
 
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
 
-        start_time = time.time()
-        retries = 3
-        while True:
-            await asyncio.sleep(5)
-            try:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
+            start_time = time.time()
+            retries = 3
+            while True:
+                await asyncio.sleep(5)
+                try:
+                    run_status = await self.client.beta.threads.runs.retrieve(
+                        thread_id=thread_id,
+                        run_id=run.id
+                    )
 
-                if run_status.status == "completed":
-                    break
-                elif run_status.status in ["failed", "cancelled", "expired"]:
-                    raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
-                elif time.time() - start_time > 60:
-                    raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
-            except TimeoutError as e:
-                logger.error(f"❌ TimeoutError: {e}")
-                if retries > 0:
-                    retries -= 1
-                    logger.info(f"Retrying... {retries} retries left")
-                    continue
-                else:
-                    return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
+                    if run_status.status == "completed":
+                        break
+                    elif run_status.status in ["failed", "cancelled", "expired"]:
+                        raise Exception(f"🚨 Run fallido con estado: {run_status.status}")
+                    elif time.time() - start_time > 60:
+                        raise TimeoutError("⏳ La consulta al asistente tomó demasiado tiempo.")
+                except TimeoutError as e:
+                    logger.error(f"❌ TimeoutError: {e}")
+                    if retries > 0:
+                        retries -= 1
+                        logger.info(f"Retrying... {retries} retries left")
+                        continue
+                    else:
+                        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
 
-        if not messages.data or not messages.data[0].content:
-            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+            if not messages.data or not messages.data[0].content:
+                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-        assistant_message = messages.data[0].content[0].text.value.strip()
-        return assistant_message if assistant_message else "⚠️ No obtuve una respuesta válida del asistente."
+            assistant_message = messages.data[0].content[0].text.value.strip()
+            return assistant_message if assistant_message else "⚠️ No obtuve una respuesta válida del asistente."
 
-    except TimeoutError as e:
-        logger.error(f"❌ TimeoutError: {e}")
-        return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
+        except TimeoutError as e:
+            logger.error(f"❌ TimeoutError: {e}")
+            return "⏳ El asistente tardó demasiado en responder. Intenta de nuevo más tarde."
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str):
         """Procesa mensajes de texto del usuario."""
@@ -204,7 +221,7 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
             if "error" in products:
                 return "⚠️ Ocurrió un error al consultar los productos."
 
-            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])])
+            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])][...]
 
             if not product_list:
                 return "⚠️ No se encontraron productos."
@@ -213,7 +230,6 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
         except Exception as e:
             logger.error(f"❌ Error procesando consulta de productos: {e}")
             return "⚠️ Ocurrió un error al procesar tu consulta de productos."
-
 
     async def fetch_products(self, query):
         url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
@@ -241,24 +257,6 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
             except Exception as e:
                 logger.error(f"❌ Error consultando Google Sheets: {e}")
                 return {"error": "Error consultando Google Sheets"}
-
-    def setup_handlers(self):
-        """Configura los manejadores de comandos y mensajes"""
-        try:
-            self.telegram_app.add_handler(CommandHandler("start", self.start_command))
-            self.telegram_app.add_handler(CommandHandler("help", self.help_command))
-            self.telegram_app.add_handler(MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                self.route_message
-            ))
-            self.telegram_app.add_handler(MessageHandler(
-                filters.VOICE,
-                self.handle_voice_message
-            ))
-            logger.info("Handlers configurados correctamente")
-        except Exception as e:
-            logger.error(f"Error en setup_handlers: {e}")
-            raise
 
     def load_verified_users(self):
         """Carga usuarios validados desde la base de datos."""
@@ -405,7 +403,6 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
             logger.error(f"⚠️ Error inesperado: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
-
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Maneja los mensajes de voz"""
         try:
@@ -459,7 +456,7 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
         except Exception as e:
             logger.error(f"❌ Error verificando email para {chat_id}: {e}")
             await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
-            
+
     async def is_user_whitelisted(self, email: str) -> bool:
         try:
             result = self.sheets_service.spreadsheets().values().get(
@@ -476,7 +473,7 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
             logger.error(f"Error verificando whitelist: {e}")
             return False
 
-# Instanciar el bot
+    # Instanciar el bot
 try:
     bot = CoachBot()
 except Exception as e:
@@ -503,5 +500,3 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
-
-            
