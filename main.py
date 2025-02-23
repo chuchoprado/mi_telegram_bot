@@ -204,7 +204,6 @@ class CoachBot:
                 "⚠️ Ocurrió un error al procesar tu mensaje. Por favor, intenta de nuevo."
             )
 
-
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
             products = await self.fetch_products(query)
