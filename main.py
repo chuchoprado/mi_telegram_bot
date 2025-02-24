@@ -111,78 +111,72 @@ class CoachBot:
        Returns:
         str: Respuesta del asistente en formato humanizado
         """
-       try:
-        thread_id = await self.get_or_create_thread(chat_id)
+   try:
+    thread_id = await self.get_or_create_thread(chat_id)
 
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
+    if not thread_id:
+        return "❌ No se pudo establecer conexión con el asistente."
 
-        # Enviar mensaje al asistente
-        await self.client.beta.threads.messages.create(
+    await self.client.beta.threads.messages.create(
+        thread_id=thread_id,
+        role="user",
+        content=user_message
+    )
+
+    run = await self.client.beta.threads.runs.create(
+        thread_id=thread_id,
+        assistant_id=self.assistant_id
+    )
+
+    # Esperar la respuesta del asistente con un timeout de 60 segundos
+    start_time = time.time()
+    while True:
+        run_status = await self.client.beta.threads.runs.retrieve(
             thread_id=thread_id,
-            role="user",
-            content=user_message
+            run_id=run.id
         )
 
-        # Ejecutar el asistente
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
+        if run_status.status == 'completed':
+            break
+        elif run_status.status in ['failed', 'cancelled', 'expired']:
+            raise Exception(f"Run failed with status: {run_status.status}")
+        elif time.time() - start_time > 60:
+            raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
 
-        # Esperar la respuesta del asistente con un tiempo límite de 60s
-        start_time = time.time()
-        while True:
-            run_status = await self.client.beta.threads.runs.retrieve(
-                thread_id=thread_id,
-                run_id=run.id
-            )
+        await asyncio.sleep(1)
 
-            if run_status.status == 'completed':
-                break
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                raise Exception(f"Run failed with status: {run_status.status}")
-            elif time.time() - start_time > 60:
-                raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
+    messages = await self.client.beta.threads.messages.list(
+        thread_id=thread_id,
+        order="desc",
+        limit=1
+    )
 
-            await asyncio.sleep(1)
+    if not messages.data or not messages.data[0].content:
+        return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-        # Obtener la última respuesta del asistente
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+    assistant_message = messages.data[0].content[0].text.value.strip()
 
-        if not messages.data or not messages.data[0].content:
-            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+    if not assistant_message:
+        return "⚠️ No encontré información relevante. ¿Puedes reformular tu pregunta?"
 
-        assistant_message = messages.data[0].content[0].text.value.strip()
+    response = f"✨ Aquí tienes:\n\n{assistant_message}\n\n🔥 ¿Necesitas más ayuda?"
 
-        # Verificar que la respuesta no esté vacía
-        if not assistant_message:
-            return "⚠️ No encontré información relevante. ¿Puedes reformular tu pregunta?"
+    self.conversation_history.setdefault(chat_id, []).append({
+        "role": "assistant",
+        "content": response
+    })
 
-        # Añadir un tono más humano con íconos
-        response = f"✨ Aquí tienes:\n\n{assistant_message}\n\n🔥 ¿Necesitas más ayuda?"
+    return response
 
-        # Guardar la conversación
-        self.conversation_history.setdefault(chat_id, []).append({
-            "role": "assistant",
-            "content": response
-        })
+except TimeoutError:
+    return "⏳ El asistente tardó demasiado en responder. Inténtalo nuevamente."
 
-        return response
-
-    except TimeoutError:
-        return "⏳ El asistente tardó demasiado en responder. Inténtalo nuevamente."
-
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+except Exception as e:
+    logger.error(f"❌ Error procesando mensaje: {e}")
+    return "⚠️ Ocurrió un error al procesar tu mensaje."
 
 
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
+   async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
         """Procesa los mensajes de texto recibidos."""
         try:
             chat_id = update.message.chat.id
