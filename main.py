@@ -86,7 +86,7 @@ class CoachBot:
             ''')
             conn.commit()
 
-    async def get_or_create_thread(self, chat_id):
+ async def get_or_create_thread(self, chat_id):
     """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
     if chat_id in self.user_threads:
         return self.user_threads[chat_id]
@@ -96,7 +96,7 @@ class CoachBot:
         self.user_threads[chat_id] = thread.id
         return thread.id
 
-    except Exception as e:
+    except Exception as e:  # Indentación corregida
         logger.error(f"❌ Error creando thread para {chat_id}: {e}")
         return None
 
