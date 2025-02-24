@@ -55,6 +55,7 @@ class CoachBot:
         self.verified_users = {}
         self.conversation_history = {}
         self.user_threads = {}
+        self.user_locks = {}
         self.db_path = 'bot_data.db'
 
         # Inicializar la aplicación de Telegram
@@ -100,54 +101,44 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        """
-        Envía un mensaje al asistente de OpenAI y espera su respuesta.
-        Args:
-        chat_id (int): ID del chat de Telegram
-        user_message (str): Mensaje del usuario
+    """
+    Envía un mensaje al asistente de OpenAI y espera su respuesta.
+    """
+    try:
+        thread_id = await self.get_or_create_thread(chat_id)
 
-        Returns:
-        str: Respuesta del asistente en formato humanizado
-        """
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
+
+        # Verificar si hay un run activo
         try:
-            thread_id = await self.get_or_create_thread(chat_id)
-
-            if not thread_id:
-                return "❌ No se pudo establecer conexión con el asistente."
-
-            await self.client.beta.threads.messages.create(
+            runs = await self.client.beta.threads.runs.list(
                 thread_id=thread_id,
-                role="user",
-                content=user_message
-            )
-
-            run = await self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
-
-            # Esperar la respuesta del asistente con un timeout de 60 segundos
-            start_time = time.time()
-            while True:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
-
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    raise Exception(f"Run failed with status: {run_status.status}")
-                elif time.time() - start_time > 60:
-                    raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
-
-                await asyncio.sleep(1)
-
-            messages = await self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
                 limit=1
             )
+            
+            if runs.data and runs.data[0].status in ['in_progress', 'queued', 'requires_action']:
+                # Opción 1: Cancelar el run existente
+                current_run_id = runs.data[0].id
+                await self.client.beta.threads.runs.cancel(
+                    thread_id=thread_id,
+                    run_id=current_run_id
+                )
+                # Esperar un momento para asegurar que la cancelación se procese
+                await asyncio.sleep(1)
+                
+                # Alternativa: Retornar un mensaje pidiendo al usuario que espere
+                # return "⏳ Aún estoy procesando tu mensaje anterior. Por favor espera unos segundos..."
+        except Exception as e:
+            logger.warning(f"Error verificando runs activos: {e}")
+            # Continuamos aunque haya error en la verificación
+
+        # Ahora creamos el mensaje
+        await self.client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
 
             if not messages.data or not messages.data[0].content:
                 return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
@@ -172,40 +163,41 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error procesando mensaje: {e}")
             return "⚠️ Ocurrió un error al procesar tu mensaje."
+            
 
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-        """Procesa los mensajes de texto recibidos."""
+async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
+    """Procesa los mensajes de texto recibidos."""
+    try:
+        chat_id = update.message.chat.id
+
+        # Crear un bloqueo para este usuario si no existe
+        if chat_id not in self.user_locks:
+            self.user_locks[chat_id] = asyncio.Lock()
+            
+        # Intentar adquirir el bloqueo con timeout
         try:
-            chat_id = update.message.chat.id
-
-            if not user_message.strip():
-                return "⚠️ No se recibió un mensaje válido."
-
-            await context.bot.send_chat_action(
-                chat_id=chat_id,
-                action=ChatAction.TYPING
-            )
-
-            # Verificar consulta de productos
-            if any(keyword in user_message.lower() for keyword in ['producto', 'comprar', 'precio', 'costo']):
-                return await self.process_product_query(chat_id, user_message)
-
-            # Usar asistente de OpenAI
-            response = await self.send_message_to_assistant(chat_id, user_message)
-
-            if not response.strip():
-                logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
-                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
-
-            # Guardar conversación solo si hay respuesta válida
-            self.save_conversation(chat_id, "user", user_message)
-            self.save_conversation(chat_id, "assistant", response)
-
+            # Intentar adquirir el bloqueo con un timeout de 1 segundo
+            async with asyncio.timeout(1):
+                acquired = await self.user_locks[chat_id].acquire()
+        except asyncio.TimeoutError:
+            # Si no se puede adquirir el bloqueo, significa que hay otra consulta en proceso
+            return "⏳ Todavía estoy procesando tu consulta anterior. Por favor espera un momento."
+        
+        try:
+            # Resto del código actual...
+            # ...
+            
+            # Resto del código actual...
             return response
-
-        except Exception as e:
-            logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+        finally:
+            # Asegurarse de liberar el bloqueo
+            self.user_locks[chat_id].release()
+    except Exception as e:
+        # Asegurarse de liberar el bloqueo en caso de error
+        if chat_id in self.user_locks and self.user_locks[chat_id].locked():
+            self.user_locks[chat_id].release()
+        logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_product_query(self, chat_id: int, query: str) -> str:
         """Procesa una consulta de productos."""
