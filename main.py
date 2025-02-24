@@ -102,8 +102,7 @@ class CoachBot:
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
         """
-          Envía un mensaje al asistente de OpenAI y espera su respuesta.
-
+        Envía un mensaje al asistente de OpenAI y espera su respuesta.
           Args:
           chat_id (int): ID del chat de Telegram
           user_message (str): Mensaje del usuario
@@ -175,8 +174,6 @@ class CoachBot:
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
         return "⚠️ Ocurrió un error al procesar tu mensaje."
-
-
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
         """Procesa los mensajes de texto recibidos."""
