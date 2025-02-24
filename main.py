@@ -86,228 +86,177 @@ class CoachBot:
             ''')
             conn.commit()
 
- async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-    if chat_id in self.user_threads:
-        return self.user_threads[chat_id]
+    async def get_or_create_thread(self, chat_id):
+        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+        if chat_id in self.user_threads:
+            return self.user_threads[chat_id]
 
-    try:
-        thread = await self.client.beta.threads.create()
-        self.user_threads[chat_id] = thread.id
-        return thread.id
+        try:
+            thread = await self.client.beta.threads.create()
+            self.user_threads[chat_id] = thread.id
+            return thread.id
+        except Exception as e:
+            logger.error(f"❌ Error creando thread para {chat_id}: {e}")
+            return None
 
-    except Exception as e:  # Indentación corregida
-        logger.error(f"❌ Error creando thread para {chat_id}: {e}")
-        return None
+    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+        """
+        Envía un mensaje al asistente de OpenAI y espera su respuesta.
+        Args:
+        chat_id (int): ID del chat de Telegram
+        user_message (str): Mensaje del usuario
 
-async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    """
-    Envía un mensaje al asistente de OpenAI y espera su respuesta.
-    Args:
-    chat_id (int): ID del chat de Telegram
-    user_message (str): Mensaje del usuario
+        Returns:
+        str: Respuesta del asistente en formato humanizado
+        """
+        try:
+            thread_id = await self.get_or_create_thread(chat_id)
 
-    Returns:
-    str: Respuesta del asistente en formato humanizado
-    """
-    try:
-        thread_id = await self.get_or_create_thread(chat_id)
+            if not thread_id:
+                return "❌ No se pudo establecer conexión con el asistente."
 
-        if not thread_id:
-            return "❌ No se pudo establecer conexión con el asistente."
-
-        await self.client.beta.threads.messages.create(
-            thread_id=thread_id,
-            role="user",
-            content=user_message
-        )
-
-        run = await self.client.beta.threads.runs.create(
-            thread_id=thread_id,
-            assistant_id=self.assistant_id
-        )
-
-        # Esperar la respuesta del asistente con un timeout de 60 segundos
-        start_time = time.time()
-        while True:
-            run_status = await self.client.beta.threads.runs.retrieve(
+            await self.client.beta.threads.messages.create(
                 thread_id=thread_id,
-                run_id=run.id
+                role="user",
+                content=user_message
             )
 
-            if run_status.status == 'completed':
-                break
-            elif run_status.status in ['failed', 'cancelled', 'expired']:
-                raise Exception(f"Run failed with status: {run_status.status}")
-            elif time.time() - start_time > 60:
-                raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
 
-            await asyncio.sleep(1)
+            # Esperar la respuesta del asistente con un timeout de 60 segundos
+            start_time = time.time()
+            while True:
+                run_status = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
 
-        messages = await self.client.beta.threads.messages.list(
-            thread_id=thread_id,
-            order="desc",
-            limit=1
-        )
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    raise Exception(f"Run failed with status: {run_status.status}")
+                elif time.time() - start_time > 60:
+                    raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
 
-        if not messages.data or not messages.data[0].content:
-            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+                await asyncio.sleep(1)
 
-        assistant_message = messages.data[0].content[0].text.value.strip()
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
 
-        if not assistant_message:
-            return "⚠️ No encontré información relevante. ¿Puedes reformular tu pregunta?"
+            if not messages.data or not messages.data[0].content:
+                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-        response = f"✨ Aquí tienes:\n\n{assistant_message}\n\n🔥 ¿Necesitas más ayuda?"
+            assistant_message = messages.data[0].content[0].text.value.strip()
 
-        self.conversation_history.setdefault(chat_id, []).append({
-            "role": "assistant",
-            "content": response
-        })
+            if not assistant_message:
+                return "⚠️ No encontré información relevante. ¿Puedes reformular tu pregunta?"
 
-        return response
+            response = f"✨ Aquí tienes:\n\n{assistant_message}\n\n🔥 ¿Necesitas más ayuda?"
 
-    except TimeoutError:
-        return "⏳ El asistente tardó demasiado en responder. Inténtalo nuevamente."
+            self.conversation_history.setdefault(chat_id, []).append({
+                "role": "assistant",
+                "content": response
+            })
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+            return response
 
-async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-    """Procesa los mensajes de texto recibidos."""
-    try:
-        chat_id = update.message.chat.id
+        except TimeoutError:
+            return "⏳ El asistente tardó demasiado en responder. Inténtalo nuevamente."
 
-        if not user_message.strip():
-            return "⚠️ No se recibió un mensaje válido."
+        except Exception as e:
+            logger.error(f"❌ Error procesando mensaje: {e}")
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-        await context.bot.send_chat_action(
-            chat_id=chat_id,
-            action=ChatAction.TYPING
-        )
+    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
+        """Procesa los mensajes de texto recibidos."""
+        try:
+            chat_id = update.message.chat.id
 
-        # Verificar consulta de productos
-        if any(keyword in user_message.lower() for keyword in ['producto', 'comprar', 'precio', 'costo']):
-            return await self.process_product_query(chat_id, user_message)
+            if not user_message.strip():
+                return "⚠️ No se recibió un mensaje válido."
 
-        # Usar asistente de OpenAI
-        response = await self.send_message_to_assistant(chat_id, user_message)
+            await context.bot.send_chat_action(
+                chat_id=chat_id,
+                action=ChatAction.TYPING
+            )
 
-        if not response.strip():
-            logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
-            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+            # Verificar consulta de productos
+            if any(keyword in user_message.lower() for keyword in ['producto', 'comprar', 'precio', 'costo']):
+                return await self.process_product_query(chat_id, user_message)
 
-        # Guardar conversación solo si hay respuesta válida
-        self.save_conversation(chat_id, "user", user_message)
-        self.save_conversation(chat_id, "assistant", response)
+            # Usar asistente de OpenAI
+            response = await self.send_message_to_assistant(chat_id, user_message)
 
-        return response
+            if not response.strip():
+                logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
+                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-    except Exception as e:
-        logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
-        return "⚠️ Ocurrió un error al procesar tu mensaje."
+            # Guardar conversación solo si hay respuesta válida
+            self.save_conversation(chat_id, "user", user_message)
+            self.save_conversation(chat_id, "assistant", response)
 
-async def process_product_query(self, chat_id: int, query: str) -> str:
-    """Procesa una consulta de productos."""
-    try:
-        products = await self.fetch_products(query)
-        if "error" in products:
-            return products["error"]
+            return response
 
-        product_list = "\n".join([
-            f"✨ *{p.get('titulo', 'Sin título')}*\n📌 {p.get('descripcion', 'Sin descripción').split('.')[0]}...\n🔗 [Ver aquí]({p.get('link', 'No disponible')})"
-            for p in products.get("data", [])
-        ])
+        except Exception as e:
+            logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
+            return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-        if not product_list:
-            return "⚠️ No se encontraron productos que coincidan con tu búsqueda."
-
-        return f"🔍 Aquí tienes algunas opciones:\n\n{product_list}\n\n🔥 ¿Te gustaría más información sobre alguno?"
-
-    except Exception as e:
-        logger.error(f"❌ Error procesando consulta de productos: {e}")
-        return "⚠️ Ocurrió un error al procesar tu consulta de productos."
-
-async def fetch_products(self, query):
-    """Realiza una consulta a Google Sheets para obtener productos recomendados."""
-    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-    params = {"query": query}
-
-    logger.info(f"🔍 Consultando Google Sheets con: {query}")
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:  # Se aumenta el timeout a 15s
-            response = await client.get(url, params=params, follow_redirects=True)
-
-        if response.status_code != 200:
-            logger.error(f"⚠️ Error en Google Sheets API: {response.status_code}")
-            return {"error": "⚠️ No se pudo obtener la información. Inténtalo más tarde."}
-
-        data = response.json()
-        if not data.get("data"):
-            return {"error": "⚠️ No se encontraron resultados para tu búsqueda."}
-
-        logger.info(f"📊 Respuesta de Google Sheets: {data}")
-        return data
-
-    except httpx.TimeoutException:
-        logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
-        return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
-
-    except Exception as e:
-        logger.error(f"❌ Error consultando Google Sheets: {e}")
-        return {"error": "❌ Ocurrió un error al obtener los datos."}
-
-    
     async def process_product_query(self, chat_id: int, query: str) -> str:
-    try:
-        products = await self.fetch_products(query)
-        if "error" in products:
-            return products["error"]
+        """Procesa una consulta de productos."""
+        try:
+            products = await self.fetch_products(query)
+            if "error" in products:
+                return products["error"]
 
-        product_list = "\n".join([
-            f"✨ *{p.get('titulo', 'Sin título')}*\n📌 {p.get('descripcion', 'Sin descripción').split('.')[0]}...\n🔗 [Ver aquí]({p.get('link', 'No disponible')})"
-            for p in products.get("data", [])
-        ])
+            product_list = "\n".join([
+                f"✨ *{p.get('titulo', 'Sin título')}*\n📌 {p.get('descripcion', 'Sin descripción').split('.')[0]}...\n🔗 [Ver aquí]({p.get('link', 'No disponible')})"
+                for p in products.get("data", [])
+            ])
 
-        if not product_list:
-            return "⚠️ No se encontraron productos que coincidan con tu búsqueda."
+            if not product_list:
+                return "⚠️ No se encontraron productos que coincidan con tu búsqueda."
 
-        return f"🔍 Aquí tienes algunas opciones:\n\n{product_list}\n\n🔥 ¿Te gustaría más información sobre alguno?"
+            return f"🔍 Aquí tienes algunas opciones:\n\n{product_list}\n\n🔥 ¿Te gustaría más información sobre alguno?"
 
-    except Exception as e:
-        logger.error(f"❌ Error procesando consulta de productos: {e}")
-        return "⚠️ Ocurrió un error al procesar tu consulta de productos."
+        except Exception as e:
+            logger.error(f"❌ Error procesando consulta de productos: {e}")
+            return "⚠️ Ocurrió un error al procesar tu consulta de productos."
 
     async def fetch_products(self, query):
-    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-    params = {"query": query}
+        """Realiza una consulta a Google Sheets para obtener productos recomendados."""
+        url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+        params = {"query": query}
 
-    logger.info(f"🔍 Consultando Google Sheets con: {query}")
+        logger.info(f"🔍 Consultando Google Sheets con: {query}")
 
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:  # Se aumenta el timeout a 15s
-            response = await client.get(url, params=params, follow_redirects=True)
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:  # Se aumenta el timeout a 15s
+                response = await client.get(url, params=params, follow_redirects=True)
 
-        if response.status_code != 200:
-            logger.error(f"⚠️ Error en Google Sheets API: {response.status_code}")
-            return {"error": "⚠️ No se pudo obtener la información. Inténtalo más tarde."}
+            if response.status_code != 200:
+                logger.error(f"⚠️ Error en Google Sheets API: {response.status_code}")
+                return {"error": "⚠️ No se pudo obtener la información. Inténtalo más tarde."}
 
-        data = response.json()
-        if not data.get("data"):
-            return {"error": "⚠️ No se encontraron resultados para tu búsqueda."}
+            data = response.json()
+            if not data.get("data"):
+                return {"error": "⚠️ No se encontraron resultados para tu búsqueda."}
 
-        logger.info(f"📊 Respuesta de Google Sheets: {data}")
-        return data
+            logger.info(f"📊 Respuesta de Google Sheets: {data}")
+            return data
 
-    except httpx.TimeoutException:
-        logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
-        return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
+        except httpx.TimeoutException:
+            logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
+            return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
 
-    except Exception as e:
-        logger.error(f"❌ Error consultando Google Sheets: {e}")
-        return {"error": "❌ Ocurrió un error al obtener los datos."}
+        except Exception as e:
+            logger.error(f"❌ Error consultando Google Sheets: {e}")
+            return {"error": "❌ Ocurrió un error al obtener los datos."}
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
@@ -465,7 +414,7 @@ async def fetch_products(self, query):
             if response is None or not response.strip():
                 raise ValueError("La respuesta del asistente está vacía")
 
-            await update.message.reply_text(response)
+            await update.message.reply_text(response, parse_mode='Markdown')
 
         except openai.OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
@@ -479,6 +428,12 @@ async def fetch_products(self, query):
         """Maneja los mensajes de voz"""
         try:
             chat_id = update.message.chat.id
+            
+            # Verificar si el usuario está verificado
+            if chat_id not in self.verified_users:
+                await update.message.reply_text("⚠️ Por favor, verifica tu email primero.")
+                return
+                
             voice_file = await update.message.voice.get_file()
             voice_file_path = f"{chat_id}_voice_note.ogg"
             await voice_file.download(voice_file_path)
@@ -490,12 +445,25 @@ async def fetch_products(self, query):
             try:
                 user_message = recognizer.recognize_google(audio, language='es-ES')
                 logger.info(f"Transcripción de voz: {user_message}")
-                await self.process_text_message(update, context, user_message)
+                
+                # Enviar indicación de que el bot está escribiendo
+                await context.bot.send_chat_action(
+                    chat_id=chat_id,
+                    action=ChatAction.TYPING
+                )
+                
+                response = await self.process_text_message(update, context, user_message)
+                await update.message.reply_text(response, parse_mode='Markdown')
+                
             except sr.UnknownValueError:
                 await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
             except sr.RequestError as e:
                 logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
                 await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
+            
+            # Eliminar el archivo temporal
+            if os.path.exists(voice_file_path):
+                os.remove(voice_file_path)
 
         except Exception as e:
             logger.error(f"Error manejando mensaje de voz: {e}")
@@ -520,7 +488,8 @@ async def fetch_products(self, query):
 
             thread_id = await self.get_or_create_thread(chat_id)
             self.user_threads[chat_id] = thread_id
-
+            self.verified_users[chat_id] = user_email
+            
             self.save_verified_user(chat_id, user_email, username)
             await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
 
@@ -530,6 +499,10 @@ async def fetch_products(self, query):
 
     async def is_user_whitelisted(self, email: str) -> bool:
         try:
+            if not self.sheets_service:
+                logger.error("Servicio de Google Sheets no inicializado")
+                return False
+                
             result = self.sheets_service.spreadsheets().values().get(
                 spreadsheetId=self.SPREADSHEET_ID,
                 range='Usuarios!A:A'
@@ -571,4 +544,9 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
-        
+
+@app.get("/health")
+async def health_check():
+    """Endpoint para verificar la salud del servicio"""
+    return {"status": "online", "timestamp": time.time()}
+    
