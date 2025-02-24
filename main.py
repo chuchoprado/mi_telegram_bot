@@ -101,70 +101,78 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        """
-        Envía un mensaje al asistente de OpenAI y espera su respuesta.
+    """
+    Envía un mensaje al asistente de OpenAI y espera su respuesta.
 
-        Args:
-            chat_id (int): ID del chat de Telegram
-            user_message (str): Mensaje del usuario
+    Args:
+        chat_id (int): ID del chat de Telegram
+        user_message (str): Mensaje del usuario
 
-        Returns:
-            str: Respuesta del asistente
-        """
-        try:
-            thread_id = await self.get_or_create_thread(chat_id)
+    Returns:
+        str: Respuesta del asistente en formato humanizado
+    """
+    try:
+        thread_id = await self.get_or_create_thread(chat_id)
 
-            if not thread_id:
-                return "❌ No se pudo establecer conexión con el asistente."
+        if not thread_id:
+            return "❌ No se pudo establecer conexión con el asistente."
 
-            await self.client.beta.threads.messages.create(
+        await self.client.beta.threads.messages.create(
+            thread_id=thread_id,
+            role="user",
+            content=user_message
+        )
+
+        run = await self.client.beta.threads.runs.create(
+            thread_id=thread_id,
+            assistant_id=self.assistant_id
+        )
+
+        start_time = time.time()
+        while True:
+            run_status = await self.client.beta.threads.runs.retrieve(
                 thread_id=thread_id,
-                role="user",
-                content=user_message
+                run_id=run.id
             )
 
-            run = await self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
+            if run_status.status == 'completed':
+                break
+            elif run_status.status in ['failed', 'cancelled', 'expired']:
+                raise Exception(f"Run failed with status: {run_status.status}")
+            elif time.time() - start_time > 60:  # Timeout después de 60 segundos
+                raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
 
-            start_time = time.time()
-            while True:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
+            await asyncio.sleep(1)
 
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    raise Exception(f"Run failed with status: {run_status.status}")
-                elif time.time() - start_time > 60:  # Timeout after 60 seconds
-                    raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
+        messages = await self.client.beta.threads.messages.list(
+            thread_id=thread_id,
+            order="desc",
+            limit=1
+        )
 
-                await asyncio.sleep(1)
+        if not messages.data or not messages.data[0].content:
+            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-            messages = await self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=1
-            )
+        assistant_message = messages.data[0].content[0].text.value.strip()
 
-            if not messages.data or not messages.data[0].content:
-                return "⚠️ La respuesta del asistente está vacía. Inténtalo más tarde."
+        # Evitar respuestas vacías o sin sentido
+        if not assistant_message:
+            return "⚠️ No encontré información relevante. ¿Puedes reformular tu pregunta?"
 
-            assistant_message = messages.data[0].content[0].text.value
+        # Añadir un tono más humano con íconos
+        response = f"✨ Aquí tienes:\n\n{assistant_message}\n\n🔥 ¿Necesitas más ayuda?"
 
-            self.conversation_history.setdefault(chat_id, []).append({
-                "role": "assistant",
-                "content": assistant_message
-            })
+        self.conversation_history.setdefault(chat_id, []).append({
+            "role": "assistant",
+            "content": response
+        })
 
-            return assistant_message
+        return response
 
-        except Exception as e:
-            logger.error(f"❌ Error procesando mensaje: {e}")
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+    except Exception as e:
+        logger.error(f"❌ Error procesando mensaje: {e}")
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
+
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
         """Procesa los mensajes de texto recibidos."""
@@ -201,43 +209,53 @@ class CoachBot:
             return "⚠️ Ocurrió un error al procesar tu mensaje."
     
     async def process_product_query(self, chat_id: int, query: str) -> str:
-        try:
-            products = await self.fetch_products(query)
-            if "error" in products:
-                return "⚠️ Ocurrió un error al consultar los productos."
+    try:
+        products = await self.fetch_products(query)
+        if "error" in products:
+            return products["error"]
 
-            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])])
-            if not product_list:
-                return "⚠️ No se encontraron productos."
+        product_list = "\n".join([
+            f"✨ *{p.get('titulo', 'Sin título')}*\n📌 {p.get('descripcion', 'Sin descripción').split('.')[0]}...\n🔗 [Ver aquí]({p.get('link', 'No disponible')})"
+            for p in products.get("data", [])
+        ])
 
-            return f"🔍 Productos recomendados:\n{product_list}"
-        except Exception as e:
-            logger.error(f"❌ Error procesando consulta de productos: {e}")
-            return "⚠️ Ocurrió un error al procesar tu consulta de productos."
+        if not product_list:
+            return "⚠️ No se encontraron productos que coincidan con tu búsqueda."
+
+        return f"🔍 Aquí tienes algunas opciones:\n\n{product_list}\n\n🔥 ¿Te gustaría más información sobre alguno?"
+
+    except Exception as e:
+        logger.error(f"❌ Error procesando consulta de productos: {e}")
+        return "⚠️ Ocurrió un error al procesar tu consulta de productos."
 
     async def fetch_products(self, query):
-        url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
-        params = {"query": query}
-        
-        logger.info(f"Consultando Google Sheets con: {params}")
+    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+    params = {"query": query}
 
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                response = await client.get(url, params=params, follow_redirects=True)
+    logger.info(f"🔍 Consultando Google Sheets con: {query}")
 
-            if response.status_code != 200:
-                raise Exception(f"Error en Google Sheets API: {response.status_code}")
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:  # Se aumenta el timeout a 15s
+            response = await client.get(url, params=params, follow_redirects=True)
 
-            logger.info(f"Respuesta de Google Sheets: {response.text}")
-            return response.json()
+        if response.status_code != 200:
+            logger.error(f"⚠️ Error en Google Sheets API: {response.status_code}")
+            return {"error": "⚠️ No se pudo obtener la información. Inténtalo más tarde."}
 
-        except httpx.TimeoutException:
-            logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
-            return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
+        data = response.json()
+        if not data.get("data"):
+            return {"error": "⚠️ No se encontraron resultados para tu búsqueda."}
 
-        except Exception as e:
-            logger.error(f"❌ Error consultando Google Sheets: {e}")
-            return {"error": "Error consultando Google Sheets"}
+        logger.info(f"📊 Respuesta de Google Sheets: {data}")
+        return data
+
+    except httpx.TimeoutException:
+        logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
+        return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
+
+    except Exception as e:
+        logger.error(f"❌ Error consultando Google Sheets: {e}")
+        return {"error": "❌ Ocurrió un error al obtener los datos."}
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
