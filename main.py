@@ -87,31 +87,31 @@ class CoachBot:
             conn.commit()
 
     async def get_or_create_thread(self, chat_id):
-    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-    if chat_id in self.user_threads:
+       """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+       if chat_id in self.user_threads:
         return self.user_threads[chat_id]
 
-    try:
-        thread = await self.client.beta.threads.create()
-        self.user_threads[chat_id] = thread.id
-        return thread.id
+       try:
+           thread = await self.client.beta.threads.create()
+           self.user_threads[chat_id] = thread.id
+           return thread.id
 
     except Exception as e:
         logger.error(f"❌ Error creando thread para {chat_id}: {e}")
         return None
 
-async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-    """
-    Envía un mensaje al asistente de OpenAI y espera su respuesta.
+   async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+       """
+       Envía un mensaje al asistente de OpenAI y espera su respuesta.
     
-    Args:
+       Args:
         chat_id (int): ID del chat de Telegram
         user_message (str): Mensaje del usuario
 
-    Returns:
+       Returns:
         str: Respuesta del asistente en formato humanizado
-    """
-    try:
+        """
+       try:
         thread_id = await self.get_or_create_thread(chat_id)
 
         if not thread_id:
