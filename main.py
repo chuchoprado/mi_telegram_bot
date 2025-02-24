@@ -87,14 +87,14 @@ class CoachBot:
             conn.commit()
 
     async def get_or_create_thread(self, chat_id):
-       """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-       if chat_id in self.user_threads:
+    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+    if chat_id in self.user_threads:
         return self.user_threads[chat_id]
 
-       try:
-           thread = await self.client.beta.threads.create()
-           self.user_threads[chat_id] = thread.id
-           return thread.id
+    try:
+        thread = await self.client.beta.threads.create()
+        self.user_threads[chat_id] = thread.id
+        return thread.id
 
     except Exception as e:
         logger.error(f"❌ Error creando thread para {chat_id}: {e}")
@@ -174,39 +174,91 @@ async def send_message_to_assistant(self, chat_id: int, user_message: str) -> st
         logger.error(f"❌ Error procesando mensaje: {e}")
         return "⚠️ Ocurrió un error al procesar tu mensaje."
 
-   async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-        """Procesa los mensajes de texto recibidos."""
-        try:
-            chat_id = update.message.chat.id
+async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
+    """Procesa los mensajes de texto recibidos."""
+    try:
+        chat_id = update.message.chat.id
 
-            if not user_message.strip():
-                return "⚠️ No se recibió un mensaje válido."
+        if not user_message.strip():
+            return "⚠️ No se recibió un mensaje válido."
 
-            await context.bot.send_chat_action(
-                chat_id=chat_id,
-                action=ChatAction.TYPING
-            )
+        await context.bot.send_chat_action(
+            chat_id=chat_id,
+            action=ChatAction.TYPING
+        )
 
-            # Verificar consulta de productos
-            if any(keyword in user_message.lower() for keyword in ['producto', 'comprar', 'precio', 'costo']):
-                return await self.process_product_query(chat_id, user_message)
+        # Verificar consulta de productos
+        if any(keyword in user_message.lower() for keyword in ['producto', 'comprar', 'precio', 'costo']):
+            return await self.process_product_query(chat_id, user_message)
 
-            # Usar asistente de OpenAI
-            response = await self.send_message_to_assistant(chat_id, user_message)
+        # Usar asistente de OpenAI
+        response = await self.send_message_to_assistant(chat_id, user_message)
 
-            if not response.strip():
-                logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
-                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+        if not response.strip():
+            logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
+            return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
 
-            # Guardar conversación solo si hay respuesta válida
-            self.save_conversation(chat_id, "user", user_message)
-            self.save_conversation(chat_id, "assistant", response)
+        # Guardar conversación solo si hay respuesta válida
+        self.save_conversation(chat_id, "user", user_message)
+        self.save_conversation(chat_id, "assistant", response)
 
-            return response
+        return response
 
-        except Exception as e:  # Se corrigió la indentación aquí
-            logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+    except Exception as e:
+        logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
+        return "⚠️ Ocurrió un error al procesar tu mensaje."
+
+async def process_product_query(self, chat_id: int, query: str) -> str:
+    """Procesa una consulta de productos."""
+    try:
+        products = await self.fetch_products(query)
+        if "error" in products:
+            return products["error"]
+
+        product_list = "\n".join([
+            f"✨ *{p.get('titulo', 'Sin título')}*\n📌 {p.get('descripcion', 'Sin descripción').split('.')[0]}...\n🔗 [Ver aquí]({p.get('link', 'No disponible')})"
+            for p in products.get("data", [])
+        ])
+
+        if not product_list:
+            return "⚠️ No se encontraron productos que coincidan con tu búsqueda."
+
+        return f"🔍 Aquí tienes algunas opciones:\n\n{product_list}\n\n🔥 ¿Te gustaría más información sobre alguno?"
+
+    except Exception as e:
+        logger.error(f"❌ Error procesando consulta de productos: {e}")
+        return "⚠️ Ocurrió un error al procesar tu consulta de productos."
+
+async def fetch_products(self, query):
+    """Realiza una consulta a Google Sheets para obtener productos recomendados."""
+    url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
+    params = {"query": query}
+
+    logger.info(f"🔍 Consultando Google Sheets con: {query}")
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:  # Se aumenta el timeout a 15s
+            response = await client.get(url, params=params, follow_redirects=True)
+
+        if response.status_code != 200:
+            logger.error(f"⚠️ Error en Google Sheets API: {response.status_code}")
+            return {"error": "⚠️ No se pudo obtener la información. Inténtalo más tarde."}
+
+        data = response.json()
+        if not data.get("data"):
+            return {"error": "⚠️ No se encontraron resultados para tu búsqueda."}
+
+        logger.info(f"📊 Respuesta de Google Sheets: {data}")
+        return data
+
+    except httpx.TimeoutException:
+        logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
+        return {"error": "⏳ La consulta tardó demasiado. Inténtalo más tarde."}
+
+    except Exception as e:
+        logger.error(f"❌ Error consultando Google Sheets: {e}")
+        return {"error": "❌ Ocurrió un error al obtener los datos."}
+
     
     async def process_product_query(self, chat_id: int, query: str) -> str:
     try:
