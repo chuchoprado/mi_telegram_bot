@@ -563,7 +563,7 @@ class CoachBot:
         except Exception as e:
             logger.error(f"Error cargando recordatorios: {e}")
 
-async def get_or_create_thread(self, chat_id):
+    async def get_or_create_thread(self, chat_id):
         """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
         if chat_id in self.user_threads:
             return self.user_threads[chat_id]
