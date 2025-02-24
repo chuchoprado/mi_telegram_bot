@@ -87,46 +87,50 @@ class CoachBot:
             conn.commit()
 
     async def get_or_create_thread(self, chat_id):
-        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
-        if chat_id in self.user_threads:
-            return self.user_threads[chat_id]
+    """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
+    if chat_id in self.user_threads:
+        return self.user_threads[chat_id]
 
-        try:
-            thread = await self.client.beta.threads.create()
-            self.user_threads[chat_id] = thread.id
-            return thread.id
+    try:
+        thread = await self.client.beta.threads.create()
+        self.user_threads[chat_id] = thread.id
+        return thread.id
 
-        except Exception as e:
-            logger.error(f"❌ Error creando thread para {chat_id}: {e}")
-            return None
+    except Exception as e:
+        logger.error(f"❌ Error creando thread para {chat_id}: {e}")
+        return None
 
-    async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        """
-        Envía un mensaje al asistente de OpenAI y espera su respuesta.
-          Args:
-          chat_id (int): ID del chat de Telegram
-          user_message (str): Mensaje del usuario
+async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
+    """
+    Envía un mensaje al asistente de OpenAI y espera su respuesta.
+    
+    Args:
+        chat_id (int): ID del chat de Telegram
+        user_message (str): Mensaje del usuario
 
-         Returns:
-         str: Respuesta del asistente en formato humanizado
-         """
-       try:
-           thread_id = await self.get_or_create_thread(chat_id)
+    Returns:
+        str: Respuesta del asistente en formato humanizado
+    """
+    try:
+        thread_id = await self.get_or_create_thread(chat_id)
 
         if not thread_id:
             return "❌ No se pudo establecer conexión con el asistente."
 
+        # Enviar mensaje al asistente
         await self.client.beta.threads.messages.create(
             thread_id=thread_id,
             role="user",
             content=user_message
-            )
+        )
 
-            run = await self.client.beta.threads.runs.create(
+        # Ejecutar el asistente
+        run = await self.client.beta.threads.runs.create(
             thread_id=thread_id,
             assistant_id=self.assistant_id
-            )
+        )
 
+        # Esperar la respuesta del asistente con un tiempo límite de 60s
         start_time = time.time()
         while True:
             run_status = await self.client.beta.threads.runs.retrieve(
@@ -138,11 +142,12 @@ class CoachBot:
                 break
             elif run_status.status in ['failed', 'cancelled', 'expired']:
                 raise Exception(f"Run failed with status: {run_status.status}")
-            elif time.time() - start_time > 60:  # Timeout después de 60 segundos
+            elif time.time() - start_time > 60:
                 raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
 
             await asyncio.sleep(1)
 
+        # Obtener la última respuesta del asistente
         messages = await self.client.beta.threads.messages.list(
             thread_id=thread_id,
             order="desc",
@@ -154,13 +159,14 @@ class CoachBot:
 
         assistant_message = messages.data[0].content[0].text.value.strip()
 
-        # Evitar respuestas vacías o sin sentido
+        # Verificar que la respuesta no esté vacía
         if not assistant_message:
             return "⚠️ No encontré información relevante. ¿Puedes reformular tu pregunta?"
 
         # Añadir un tono más humano con íconos
         response = f"✨ Aquí tienes:\n\n{assistant_message}\n\n🔥 ¿Necesitas más ayuda?"
 
+        # Guardar la conversación
         self.conversation_history.setdefault(chat_id, []).append({
             "role": "assistant",
             "content": response
@@ -174,6 +180,7 @@ class CoachBot:
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
         return "⚠️ Ocurrió un error al procesar tu mensaje."
+
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
         """Procesa los mensajes de texto recibidos."""
