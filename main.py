@@ -7,7 +7,9 @@ import json
 import logging
 import openai
 import time
-from fastapi import FastAPI, Request
+import pytz
+from datetime import datetime, timedelta
+from fastapi import FastAPI, Request, BackgroundTasks
 from telegram import Update
 from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
@@ -15,8 +17,9 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from openai import AsyncOpenAI
 import speech_recognition as sr
-import requests
 from contextlib import closing
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 # Configurar logging
 logging.basicConfig(
@@ -30,6 +33,7 @@ app = FastAPI()
 
 class CoachBot:
     def __init__(self):
+        
         # Validar variables de entorno críticas
         required_env_vars = {
             'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
@@ -58,8 +62,12 @@ class CoachBot:
         self.db_path = 'bot_data.db'
 
         # Inicializar la aplicación de Telegram
-        self.telegram_app = Application.builder().token(self.TELEGRAM_TOKEN).build()
-
+        self.telegram_app = Application.builder().token(self.TELEGRAM_TOKEN).build()    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+        
+        # Inicializar el scheduler
+        self.scheduler = AsyncIOScheduler()        
+        # Modificar estructura de base de datos para incluir preferencias de horario
         self._init_db()
         self.setup_handlers()
         self._init_sheets()
@@ -72,7 +80,10 @@ class CoachBot:
                 CREATE TABLE IF NOT EXISTS users (
                     chat_id INTEGER PRIMARY KEY,
                     email TEXT NOT NULL UNIQUE,
-                    username TEXT
+                    username TEXT,
+                    timezone TEXT DEFAULT 'America/Mexico_City',
+                    reminder_time TEXT DEFAULT '07:30',
+                    reminders_enabled INTEGER DEFAULT 1
                 )
             ''')
             cursor.execute('''
@@ -84,9 +95,475 @@ class CoachBot:
                     FOREIGN KEY (chat_id) REFERENCES users (chat_id)
                 )
             ''')
+            # Nueva tabla para mensajes programados
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS scheduled_messages (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER,
+                    message_type TEXT,
+                    content TEXT,
+                    sent_date DATE,
+                    FOREIGN KEY (chat_id) REFERENCES users (chat_id)
+                )
+            ''')
             conn.commit()
 
-    async def get_or_create_thread(self, chat_id):
+    def setup_handlers(self):
+        """Configura los manejadores de comandos y mensajes"""
+        try:
+            self.telegram_app.add_handler(CommandHandler("start", self.start_command))
+            self.telegram_app.add_handler(CommandHandler("help", self.help_command))
+            # Nuevos comandos para configurar recordatorios
+            self.telegram_app.add_handler(CommandHandler("settime", self.set_reminder_time))
+            self.telegram_app.add_handler(CommandHandler("timezone", self.set_timezone))
+            self.telegram_app.add_handler(CommandHandler("enablereminders", self.enable_reminders))
+            self.telegram_app.add_handler(CommandHandler("disablereminders", self.disable_reminders))
+            
+            self.telegram_app.add_handler(MessageHandler(
+                filters.TEXT & ~filters.COMMAND,
+                self.route_message
+            ))
+            self.telegram_app.add_handler(MessageHandler(
+                filters.VOICE,
+                self.handle_voice_message
+            ))
+            logger.info("Handlers configurados correctamente")
+        except Exception as e:
+            logger.error(f"Error en setup_handlers: {e}")
+            raise
+
+    async def set_reminder_time(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Establece la hora para enviar recordatorios diarios"""
+        chat_id = update.message.chat.id
+        
+        if chat_id not in self.verified_users:
+            await update.message.reply_text("⚠️ Por favor, verifica tu email primero.")
+            return
+            
+        # Verificar si hay argumentos
+        if not context.args or len(context.args) != 1:
+            await update.message.reply_text(
+                "⚠️ Por favor, especifica la hora en formato HH:MM (24h).\n"
+                "Ejemplo: /settime 07:30"
+            )
+            return
+            
+        time_str = context.args[0]
+        
+        # Validar formato de hora
+        try:
+            hour, minute = map(int, time_str.split(':'))
+            if not (0 <= hour < 24 and 0 <= minute < 60):
+                raise ValueError("Hora fuera de rango")
+            
+            # Guardar en base de datos
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE users SET reminder_time = ? WHERE chat_id = ?",
+                    (time_str, chat_id)
+                )
+                conn.commit()
+                
+            # Recalcular próximo recordatorio
+            self.schedule_user_reminders(chat_id)
+                
+            await update.message.reply_text(
+                f"✅ Tu hora de recordatorios ha sido configurada a las {time_str}."
+            )
+            
+        except Exception as e:
+            logger.error(f"Error configurando hora de recordatorio: {e}")
+            await update.message.reply_text(
+                "❌ Formato de hora inválido. Usa el formato HH:MM (ejemplo: 07:30)"
+            )
+
+    async def set_timezone(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Establece la zona horaria del usuario"""
+        chat_id = update.message.chat.id
+        
+        if chat_id not in self.verified_users:
+            await update.message.reply_text("⚠️ Por favor, verifica tu email primero.")
+            return
+            
+        # Verificar si hay argumentos
+        if not context.args or len(context.args) != 1:
+            await update.message.reply_text(
+                "⚠️ Por favor, especifica tu zona horaria.\n"
+                "Ejemplo: /timezone America/Mexico_City\n\n"
+                "Zonas comunes:\n"
+                "- America/Mexico_City\n"
+                "- America/Bogota\n"
+                "- America/New_York\n"
+                "- Europe/Madrid"
+            )
+            return
+            
+        timezone_str = context.args[0]
+        
+        # Validar zona horaria
+        try:
+            pytz.timezone(timezone_str)
+            
+            # Guardar en base de datos
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE users SET timezone = ? WHERE chat_id = ?",
+                    (timezone_str, chat_id)
+                )
+                conn.commit()
+                
+            # Recalcular próximo recordatorio
+            self.schedule_user_reminders(chat_id)
+                
+            await update.message.reply_text(
+                f"✅ Tu zona horaria ha sido configurada como {timezone_str}."
+            )
+            
+        except Exception as e:
+            logger.error(f"Error configurando zona horaria: {e}")
+            await update.message.reply_text(
+                "❌ Zona horaria inválida. Intenta con un valor como 'America/Mexico_City'"
+            )
+
+    async def enable_reminders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Habilita los recordatorios para el usuario"""
+        chat_id = update.message.chat.id
+        
+        if chat_id not in self.verified_users:
+            await update.message.reply_text("⚠️ Por favor, verifica tu email primero.")
+            return
+            
+        # Guardar en base de datos
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET reminders_enabled = 1 WHERE chat_id = ?",
+                (chat_id,)
+            )
+            conn.commit()
+            
+        # Programar recordatorios
+        self.schedule_user_reminders(chat_id)
+            
+        await update.message.reply_text(
+            "✅ Los recordatorios diarios han sido habilitados."
+        )
+
+    async def disable_reminders(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Deshabilita los recordatorios para el usuario"""
+        chat_id = update.message.chat.id
+        
+        if chat_id not in self.verified_users:
+            await update.message.reply_text("⚠️ Por favor, verifica tu email primero.")
+            return
+            
+        # Guardar en base de datos
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE users SET reminders_enabled = 0 WHERE chat_id = ?",
+                (chat_id,)
+            )
+            conn.commit()
+            
+        # Cancelar recordatorios programados para este usuario
+        job_id = f"reminder_{chat_id}"
+        if self.scheduler.get_job(job_id):
+            self.scheduler.remove_job(job_id)
+            
+        await update.message.reply_text(
+            "✅ Los recordatorios diarios han sido deshabilitados."
+        )
+
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Maneja el comando /help"""
+        try:
+            help_text = (
+                "🤖 *Comandos disponibles:*\n\n"
+                "/start - Iniciar o reiniciar el bot\n"
+                "/help - Mostrar este mensaje de ayuda\n"
+                "/settime HH:MM - Configurar hora de recordatorio diario\n"
+                "/timezone Zona - Configurar zona horaria (ej: America/Mexico_City)\n"
+                "/enablereminders - Activar recordatorios diarios\n"
+                "/disablereminders - Desactivar recordatorios diarios\n\n"
+                "📝 *Funcionalidades:*\n"
+                "- Consultas sobre ejercicios\n"
+                "- Recomendaciones personalizadas\n"
+                "- Recordatorios diarios\n"
+                "- Seguimiento de progreso\n"
+                "- Recursos y videos\n\n"
+                "✨ Simplemente escribe tu pregunta y te responderé."
+            )
+            await update.message.reply_text(help_text, parse_mode='Markdown')
+            logger.info(f"Comando /help ejecutado por chat_id: {update.message.chat.id}")
+        except Exception as e:
+            logger.error(f"Error en help_command: {e}")
+            await update.message.reply_text("❌ Error mostrando la ayuda. Intenta de nuevo.")
+
+    async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Verifica el email del usuario"""
+        chat_id = update.message.chat.id
+        user_email = update.message.text.strip().lower()
+        username = update.message.from_user.username or "Unknown"
+
+        if not '@' in user_email or not '.' in user_email:
+            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
+            return
+
+        try:
+            if not await self.is_user_whitelisted(user_email):
+                await update.message.reply_text(
+                    "❌ Tu email no está en la lista autorizada. Contacta a soporte."
+                )
+                return
+
+            thread_id = await self.get_or_create_thread(chat_id)
+            self.user_threads[chat_id] = thread_id
+            self.verified_users[chat_id] = user_email
+            
+            self.save_verified_user(chat_id, user_email, username)
+            
+            # Programar recordatorios para este usuario
+            self.schedule_user_reminders(chat_id)
+            
+            await update.message.reply_text(
+                "✅ Email validado. Ahora puedes hablar conmigo.\n\n"
+                "💡 Usaré tu zona horaria predeterminada (America/Mexico_City) para "
+                "enviarte recordatorios diarios a las 07:30 AM.\n\n"
+                "Puedes cambiar esto con los comandos:\n"
+                "/settime HH:MM - Para cambiar la hora\n"
+                "/timezone Zona - Para cambiar la zona horaria\n"
+                "/disablereminders - Para desactivar los recordatorios"
+            )
+
+        except Exception as e:
+            logger.error(f"❌ Error verificando email para {chat_id}: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+
+    
+
+    def schedule_user_reminders(self, chat_id):
+        """Programa los recordatorios diarios para un usuario"""
+        try:
+            # Obtener configuración del usuario
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT timezone, reminder_time, reminders_enabled FROM users WHERE chat_id = ?",
+                    (chat_id,)
+                )
+                result = cursor.fetchone()
+                
+                if not result:
+                    logger.error(f"Usuario {chat_id} no encontrado en la base de datos")
+                    return
+                    
+                timezone_str, reminder_time, reminders_enabled = result
+                
+            if not reminders_enabled:
+                logger.info(f"Recordatorios deshabilitados para {chat_id}")
+                # Remover cualquier trabajo programado para este usuario
+                job_id = f"reminder_{chat_id}"
+                if self.scheduler.get_job(job_id):
+                    self.scheduler.remove_job(job_id)
+                return
+                
+            # Parsear hora de recordatorio
+            hour, minute = map(int, reminder_time.split(':'))
+            
+            # Crear o actualizar el trabajo programado
+            job_id = f"reminder_{chat_id}"
+            
+            # Remover trabajo existente si hay uno
+            if self.scheduler.get_job(job_id):
+                self.scheduler.remove_job(job_id)
+                
+            # Crear nuevo trabajo con CronTrigger
+            self.scheduler.add_job(
+                self.send_daily_reminder,
+                CronTrigger(hour=hour, minute=minute, timezone=timezone_str),
+                id=job_id,
+                kwargs={'chat_id': chat_id},
+                replace_existing=True
+            )
+            
+            logger.info(f"Recordatorio programado para {chat_id} a las {hour}:{minute} ({timezone_str})")
+            
+        except Exception as e:
+            logger.error(f"Error programando recordatorio: {e}")
+
+    async def send_daily_reminder(self, chat_id):
+        """Envía un recordatorio diario personalizado"""
+        try:
+            # Verificar si el usuario existe y tiene recordatorios habilitados
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT email, username, reminders_enabled FROM users WHERE chat_id = ?",
+                    (chat_id,)
+                )
+                result = cursor.fetchone()
+                
+                if not result or not result[2]:
+                    logger.info(f"Omitiendo recordatorio para {chat_id} (deshabilitado o usuario no existe)")
+                    return
+                    
+                email, username = result[0], result[1]
+            
+            # Obtener contexto del usuario (últimas conversaciones)
+            user_context = self.get_user_context(chat_id)
+            
+            # Generar mensaje personalizado usando OpenAI
+            thread_id = await self.get_or_create_thread(chat_id)
+            
+            # Enviar solicitud para generar mensaje contextual
+            prompt = (
+                f"Genera un mensaje motivacional personalizado para el usuario con email {email}. "
+                f"El mensaje debe ser breve (máximo 3 párrafos), positivo y motivador. "
+                f"Incluye alguna recomendación útil basada en sus últimas conversaciones. "
+                f"Contexto de sus últimas interacciones: {user_context}"
+            )
+            
+            await self.client.beta.threads.messages.create(
+                thread_id=thread_id,
+                role="user",
+                content=prompt
+            )
+
+            run = await self.client.beta.threads.runs.create(
+                thread_id=thread_id,
+                assistant_id=self.assistant_id
+            )
+
+            # Esperar la respuesta
+            start_time = time.time()
+            while True:
+                run_status = await self.client.beta.threads.runs.retrieve(
+                    thread_id=thread_id,
+                    run_id=run.id
+                )
+
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    raise Exception(f"Run failed with status: {run_status.status}")
+                elif time.time() - start_time > 30:
+                    raise TimeoutError("⏳ La generación tomó demasiado tiempo.")
+
+                await asyncio.sleep(1)
+
+            messages = await self.client.beta.threads.messages.list(
+                thread_id=thread_id,
+                order="desc",
+                limit=1
+            )
+
+            if not messages.data or not messages.data[0].content:
+                raise ValueError("Respuesta vacía del asistente")
+
+            personalized_message = messages.data[0].content[0].text.value.strip()
+            
+            # Enviar mensaje al usuario
+            reminder_text = (
+                f"🌟 *Buenos días {username or ''}!*\n\n"
+                f"{personalized_message}\n\n"
+                f"💪 ¿Listo para el día de hoy?"
+            )
+            
+            await self.telegram_app.bot.send_message(
+                chat_id=chat_id,
+                text=reminder_text,
+                parse_mode='Markdown'
+            )
+            
+            # Guardar en la base de datos
+            self.save_scheduled_message(chat_id, "daily_reminder", reminder_text)
+            
+            logger.info(f"Recordatorio diario enviado a {chat_id}")
+            
+        except Exception as e:
+            logger.error(f"Error enviando recordatorio diario: {e}")
+
+    def get_user_context(self, chat_id):
+        """Obtiene el contexto reciente del usuario basado en conversaciones anteriores"""
+        try:
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT role, content FROM conversations WHERE chat_id = ? ORDER BY id DESC LIMIT 10",
+                    (chat_id,)
+                )
+                conversations = cursor.fetchall()
+                
+            if not conversations:
+                return "No hay conversaciones previas."
+                
+            # Formatear el contexto
+            context = []
+            for role, content in conversations:
+                context.append(f"{role}: {content[:100]}...")
+                
+            return " ".join(context)
+            
+        except Exception as e:
+            logger.error(f"Error obteniendo contexto del usuario: {e}")
+            return "Error al obtener contexto"
+
+    def save_scheduled_message(self, chat_id, message_type, content):
+        """Guarda un mensaje programado en la base de datos"""
+        try:
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "INSERT INTO scheduled_messages (chat_id, message_type, content, sent_date) VALUES (?, ?, ?, date('now'))",
+                    (chat_id, message_type, content)
+                )
+                conn.commit()
+                
+        except Exception as e:
+            logger.error(f"Error guardando mensaje programado: {e}")
+
+    async def async_init(self):
+        """Inicialización asíncrona del bot"""
+        try:
+            await self.telegram_app.initialize()
+            self.load_verified_users()
+            
+            # Iniciar el scheduler
+            self.scheduler.start()
+            
+            # Cargar y programar todos los recordatorios
+            self.load_all_reminders()
+            
+            if not self.started:
+                self.started = True
+                await self.telegram_app.start()
+            logger.info("Bot inicializado correctamente")
+        except Exception as e:
+            logger.error(f"Error en async_init: {e}")
+            raise
+
+    def load_all_reminders(self):
+        """Carga y programa los recordatorios para todos los usuarios"""
+        try:
+            with closing(sqlite3.connect(self.db_path)) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT chat_id FROM users WHERE reminders_enabled = 1"
+                )
+                users = cursor.fetchall()
+                
+            for (chat_id,) in users:
+                self.schedule_user_reminders(chat_id)
+                
+            logger.info(f"Recordatorios cargados para {len(users)} usuarios")
+            
+        except Exception as e:
+            logger.error(f"Error cargando recordatorios: {e}")
+
+async def get_or_create_thread(self, chat_id):
         """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
         if chat_id in self.user_threads:
             return self.user_threads[chat_id]
@@ -95,6 +572,7 @@ class CoachBot:
             thread = await self.client.beta.threads.create()
             self.user_threads[chat_id] = thread.id
             return thread.id
+
         except Exception as e:
             logger.error(f"❌ Error creando thread para {chat_id}: {e}")
             return None
@@ -102,12 +580,13 @@ class CoachBot:
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
         """
         Envía un mensaje al asistente de OpenAI y espera su respuesta.
+
         Args:
-        chat_id (int): ID del chat de Telegram
-        user_message (str): Mensaje del usuario
+            chat_id (int): ID del chat de Telegram
+            user_message (str): Mensaje del usuario
 
         Returns:
-        str: Respuesta del asistente en formato humanizado
+            str: Respuesta del asistente
         """
         try:
             thread_id = await self.get_or_create_thread(chat_id)
@@ -126,7 +605,6 @@ class CoachBot:
                 assistant_id=self.assistant_id
             )
 
-            # Esperar la respuesta del asistente con un timeout de 60 segundos
             start_time = time.time()
             while True:
                 run_status = await self.client.beta.threads.runs.retrieve(
@@ -138,8 +616,8 @@ class CoachBot:
                     break
                 elif run_status.status in ['failed', 'cancelled', 'expired']:
                     raise Exception(f"Run failed with status: {run_status.status}")
-                elif time.time() - start_time > 60:
-                    raise TimeoutError("⏳ La consulta tomó demasiado tiempo.")
+                elif time.time() - start_time > 60:  # Timeout after 60 seconds
+                    raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
 
                 await asyncio.sleep(1)
 
@@ -150,24 +628,16 @@ class CoachBot:
             )
 
             if not messages.data or not messages.data[0].content:
-                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
+                return "⚠️ La respuesta del asistente está vacía. Inténtalo más tarde."
 
-            assistant_message = messages.data[0].content[0].text.value.strip()
-
-            if not assistant_message:
-                return "⚠️ No encontré información relevante. ¿Puedes reformular tu pregunta?"
-
-            response = f"✨ Aquí tienes:\n\n{assistant_message}\n\n🔥 ¿Necesitas más ayuda?"
+            assistant_message = messages.data[0].content[0].text.value
 
             self.conversation_history.setdefault(chat_id, []).append({
                 "role": "assistant",
-                "content": response
+                "content": assistant_message
             })
 
-            return response
-
-        except TimeoutError:
-            return "⏳ El asistente tardó demasiado en responder. Inténtalo nuevamente."
+            return assistant_message
 
         except Exception as e:
             logger.error(f"❌ Error procesando mensaje: {e}")
@@ -203,52 +673,40 @@ class CoachBot:
 
             return response
 
-        except Exception as e:
+        except Exception as e:  # Se corrigió la indentación aquí
             logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
             return "⚠️ Ocurrió un error al procesar tu mensaje."
-
+    
     async def process_product_query(self, chat_id: int, query: str) -> str:
-        """Procesa una consulta de productos."""
         try:
             products = await self.fetch_products(query)
             if "error" in products:
-                return products["error"]
+                return "⚠️ Ocurrió un error al consultar los productos."
 
-            product_list = "\n".join([
-                f"✨ *{p.get('titulo', 'Sin título')}*\n📌 {p.get('descripcion', 'Sin descripción').split('.')[0]}...\n🔗 [Ver aquí]({p.get('link', 'No disponible')})"
-                for p in products.get("data", [])
-            ])
-
+            product_list = "\n".join([f"- {p.get('titulo', 'Sin título')}: {p.get('descripcion', 'Sin descripción')} (link: {p.get('link', 'No disponible')})" for p in products.get("data", [])])
             if not product_list:
-                return "⚠️ No se encontraron productos que coincidan con tu búsqueda."
+                return "⚠️ No se encontraron productos."
 
-            return f"🔍 Aquí tienes algunas opciones:\n\n{product_list}\n\n🔥 ¿Te gustaría más información sobre alguno?"
-
+            return f"🔍 Productos recomendados:\n{product_list}"
         except Exception as e:
             logger.error(f"❌ Error procesando consulta de productos: {e}")
             return "⚠️ Ocurrió un error al procesar tu consulta de productos."
 
     async def fetch_products(self, query):
-        """Realiza una consulta a Google Sheets para obtener productos recomendados."""
         url = "https://script.google.com/macros/s/AKfycbwUieYWmu5pTzHUBnSnyrLGo-SROiiNFvufWdn5qm7urOamB65cqQkbQrkj05Xf3N3N_g/exec"
         params = {"query": query}
-
-        logger.info(f"🔍 Consultando Google Sheets con: {query}")
+        
+        logger.info(f"Consultando Google Sheets con: {params}")
 
         try:
-            async with httpx.AsyncClient(timeout=15) as client:  # Se aumenta el timeout a 15s
+            async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.get(url, params=params, follow_redirects=True)
 
             if response.status_code != 200:
-                logger.error(f"⚠️ Error en Google Sheets API: {response.status_code}")
-                return {"error": "⚠️ No se pudo obtener la información. Inténtalo más tarde."}
+                raise Exception(f"Error en Google Sheets API: {response.status_code}")
 
-            data = response.json()
-            if not data.get("data"):
-                return {"error": "⚠️ No se encontraron resultados para tu búsqueda."}
-
-            logger.info(f"📊 Respuesta de Google Sheets: {data}")
-            return data
+            logger.info(f"Respuesta de Google Sheets: {response.text}")
+            return response.json()
 
         except httpx.TimeoutException:
             logger.error("⏳ La API de Google Sheets tardó demasiado en responder.")
@@ -256,7 +714,7 @@ class CoachBot:
 
         except Exception as e:
             logger.error(f"❌ Error consultando Google Sheets: {e}")
-            return {"error": "❌ Ocurrió un error al obtener los datos."}
+            return {"error": "Error consultando Google Sheets"}
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
@@ -414,7 +872,7 @@ class CoachBot:
             if response is None or not response.strip():
                 raise ValueError("La respuesta del asistente está vacía")
 
-            await update.message.reply_text(response, parse_mode='Markdown')
+            await update.message.reply_text(response)
 
         except openai.OpenAIError as e:
             logger.error(f"❌ Error en OpenAI: {e}")
@@ -428,12 +886,6 @@ class CoachBot:
         """Maneja los mensajes de voz"""
         try:
             chat_id = update.message.chat.id
-            
-            # Verificar si el usuario está verificado
-            if chat_id not in self.verified_users:
-                await update.message.reply_text("⚠️ Por favor, verifica tu email primero.")
-                return
-                
             voice_file = await update.message.voice.get_file()
             voice_file_path = f"{chat_id}_voice_note.ogg"
             await voice_file.download(voice_file_path)
@@ -445,25 +897,12 @@ class CoachBot:
             try:
                 user_message = recognizer.recognize_google(audio, language='es-ES')
                 logger.info(f"Transcripción de voz: {user_message}")
-                
-                # Enviar indicación de que el bot está escribiendo
-                await context.bot.send_chat_action(
-                    chat_id=chat_id,
-                    action=ChatAction.TYPING
-                )
-                
-                response = await self.process_text_message(update, context, user_message)
-                await update.message.reply_text(response, parse_mode='Markdown')
-                
+                await self.process_text_message(update, context, user_message)
             except sr.UnknownValueError:
                 await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
             except sr.RequestError as e:
                 logger.error(f"Error en el servicio de reconocimiento de voz de Google: {e}")
                 await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
-            
-            # Eliminar el archivo temporal
-            if os.path.exists(voice_file_path):
-                os.remove(voice_file_path)
 
         except Exception as e:
             logger.error(f"Error manejando mensaje de voz: {e}")
@@ -488,8 +927,7 @@ class CoachBot:
 
             thread_id = await self.get_or_create_thread(chat_id)
             self.user_threads[chat_id] = thread_id
-            self.verified_users[chat_id] = user_email
-            
+
             self.save_verified_user(chat_id, user_email, username)
             await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
 
@@ -499,10 +937,6 @@ class CoachBot:
 
     async def is_user_whitelisted(self, email: str) -> bool:
         try:
-            if not self.sheets_service:
-                logger.error("Servicio de Google Sheets no inicializado")
-                return False
-                
             result = self.sheets_service.spreadsheets().values().get(
                 spreadsheetId=self.SPREADSHEET_ID,
                 range='Usuarios!A:A'
@@ -544,8 +978,4 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
-
-@app.get("/health")
-async def health_check():
-    """Endpoint para verificar la salud del servicio"""
-    return {"status": "online", "timestamp": time.time()}
+        
