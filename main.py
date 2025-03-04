@@ -263,7 +263,7 @@ class CoachBot:
 
     async def fetch_products(self, query):
         """Obtiene productos desde la API de Google Sheets."""
-        url = "https://script.google.com/macros/s/AKfycbydM5hKTicLYShmbTcwh8hUEcNRWmhrWm_OwbhcpirlGW-Hbflth9rafp4u0YncMr_Xcg/exec"
+        url = "https://script.google.com/macros/s/AKfycbw4DFF9JVD9ZoOqZWoj99QE-PGn1tN4w8t2ugwE9o1Yya0aIw1uv1NmrUsFywEEGzr9zg/exec"
         params = {"query": query}
         
         logger.info(f"Consultando Google Sheets con: {params}")
