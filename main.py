@@ -324,34 +324,34 @@ class CoachBot:
 
     # ACTUALIZACIÓN: Función searchProducts actualizada para usar búsqueda por palabras
     def searchProducts(self, data, query, start, limit):
-        var_results = []
-        var_count = 0;
-        // Dividir la consulta en palabras
-        var queryWords = query.split(/\s+/);
-  
-        for (var i = start; i < data.length; i++) {
-            if (!data[i] || data[i].length < 6) continue;
-  
-            var categoria = data[i][0] ? normalizeText(data[i][0]) : "";
-            var etiquetas = data[i][1] ? normalizeText(data[i][1].replace(/#/g, "")) : "";
-            var titulo = data[i][2] ? normalizeText(data[i][2]) : "";
-            var link = data[i][3] ? data[i][3].trim() : "";
-            var description = data[i][4] ? data[i][4].trim() : ""; // Columna E
-            var autor = data[i][5] ? normalizeText(data[i][5]) : "desconocido";
-  
-            // Verificar si alguna palabra de la consulta coincide en alguno de los campos
-            var match = queryWords.some(function(word) {
-                return categoria.indexOf(word) !== -1 || etiquetas.indexOf(word) !== -1 || titulo.indexOf(word) !== -1 || autor.indexOf(word) !== -1;
-            });
-  
-            if (match && link !== "") {
-                var_results.push({ link: link, descripcion: description, fuente: autor });
-                var_count++;
-            }
-            if (var_count >= limit) break;
-        }
-        return var_results;
-    }
+    results = []
+    count = 0
+    # Dividir la consulta en palabras (usando split para separar por espacios)
+    queryWords = query.split()
+
+    for i in range(start, len(data)):
+        # Verificar que la fila tenga al menos 6 columnas
+        if not data[i] or len(data[i]) < 6:
+            continue
+
+        categoria = normalizeText(data[i][0]) if data[i][0] else ""
+        etiquetas = normalizeText(data[i][1].replace("#", "")) if data[i][1] else ""
+        titulo = normalizeText(data[i][2]) if data[i][2] else ""
+        link = data[i][3].strip() if data[i][3] else ""
+        description = data[i][4].strip() if data[i][4] else ""  # Columna E
+        autor = normalizeText(data[i][5]) if data[i][5] else "desconocido"
+
+        # Verificar si alguna palabra de la consulta coincide en alguno de los campos
+        match = any(word in categoria or word in etiquetas or word in titulo or word in autor for word in queryWords)
+
+        if match and link != "":
+            results.append({ "link": link, "descripcion": description, "fuente": autor })
+            count += 1
+
+        if count >= limit:
+            break
+
+    return results
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
