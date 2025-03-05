@@ -324,12 +324,12 @@ class CoachBot:
 
     # ACTUALIZACIÓN: Función searchProducts actualizada para usar búsqueda por palabras
     def searchProducts(self, data, query, start, limit):
-        results = []
-        count = 0
-        # Dividir la consulta en palabras (usando split para separar por espacios)
-        queryWords = query.split()
+    results = []
+    count = 0
+    # Dividir la consulta en palabras usando split
+    queryWords = query.split()
 
-        for i in range(start, len(data)):
+    for i in range(start, len(data)):
         # Verificar que la fila tenga al menos 6 columnas
         if not data[i] or len(data[i]) < 6:
             continue
@@ -345,13 +345,13 @@ class CoachBot:
         match = any(word in categoria or word in etiquetas or word in titulo or word in autor for word in queryWords)
 
         if match and link != "":
-            results.append({ "link": link, "descripcion": description, "fuente": autor })
+            results.append({"link": link, "descripcion": description, "fuente": autor})
             count += 1
 
         if count >= limit:
             break
 
-        return results
+    return results
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
