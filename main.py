@@ -25,10 +25,11 @@ def extract_product_keywords(query: str) -> str:
     Extrae palabras clave relevantes eliminando saludos, puntuación y palabras comunes
     que no aportan a la búsqueda de productos.
     """
-    # Lista ampliada de stopwords (puedes ajustar según tus necesidades)
+    # Lista ampliada de stopwords (ajusta según tus necesidades)
     stopwords = {
         "hola", "podrias", "recomendarme", "por", "favor", "un", "una", "que", "me", "ayude",
-        "a", "dame", "los", "las", "el", "la", "de", "en", "con", "puedes", "puedo"
+        "a", "dame", "los", "las", "el", "la", "de", "en", "con", "puedes", "puedo",
+        "ok", "ayudarme", "recomendandome", "y"
     }
     # Remover la puntuación de la consulta
     translator = str.maketrans('', '', string.punctuation)
@@ -120,7 +121,6 @@ class CoachBot:
         """
         Envía un mensaje al asistente de OpenAI y espera su respuesta.
         """
-        # Si ya hay una solicitud en curso para este usuario, rechazar esta
         if chat_id in self.pending_requests:
             return "⏳ Ya estoy procesando tu solicitud anterior. Por favor espera."
         self.pending_requests.add(chat_id)
@@ -148,7 +148,7 @@ class CoachBot:
                     break
                 elif run_status.status in ['failed', 'cancelled', 'expired']:
                     raise Exception(f"Run failed with status: {run_status.status}")
-                elif time.time() - start_time > 60:  # Timeout after 60 seconds
+                elif time.time() - start_time > 60:
                     raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
                 await asyncio.sleep(1)
             messages = await self.client.beta.threads.messages.list(
@@ -218,12 +218,14 @@ class CoachBot:
             product_data = products.get("data", [])
             if not product_data:
                 return "📦 No encontré productos que coincidan con tu consulta. ¿Puedes ser más específico?"
+            # Limitar a máximo 5 productos para no sobrecargar la respuesta
             product_data = product_data[:5]
             product_list = []
             for p in product_data:
                 title = p.get('titulo') or p.get('fuente', 'Sin título')
                 desc = p.get('descripcion', 'Sin descripción')
                 link = p.get('link', 'No disponible')
+                # Truncar la descripción a 100 caracteres si es muy larga
                 if len(desc) > 100:
                     desc = desc[:97] + "..."
                 product_list.append(f"- *{title}*: {desc}\n  🔗 [Ver producto]({link})")
