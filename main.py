@@ -323,13 +323,13 @@ class CoachBot:
             return {"error": "Error inesperado consultando productos"}
 
     # ACTUALIZACIÓN: Función searchProducts actualizada para usar búsqueda por palabras
-    def searchProducts(self, data, query, start, limit):
-    results = []
-    count = 0
+     def searchProducts(self, data, query, start, limit):
+         results = []
+         count = 0
     # Dividir la consulta en palabras usando split
-    queryWords = query.split()
+         queryWords = query.split()
 
-    for i in range(start, len(data)):
+        for i in range(start, len(data)):
         # Verificar que la fila tenga al menos 6 columnas
         if not data[i] or len(data[i]) < 6:
             continue
