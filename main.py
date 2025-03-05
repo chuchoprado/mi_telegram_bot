@@ -5,7 +5,6 @@ import io
 import sqlite3
 import json
 import logging
-import string
 import openai
 import time
 from fastapi import FastAPI, Request
@@ -18,6 +17,7 @@ from openai import AsyncOpenAI
 import speech_recognition as sr
 import requests
 from contextlib import closing
+import string
 
 # Función nueva para extraer palabras clave de la consulta de productos
 def extract_product_keywords(query: str) -> str:
@@ -321,6 +321,37 @@ class CoachBot:
         except Exception as e:
             logger.error(f"❌ Error inesperado consultando Google Sheets: {e}")
             return {"error": "Error inesperado consultando productos"}
+
+    # ACTUALIZACIÓN: Función searchProducts actualizada para usar búsqueda por palabras
+    def searchProducts(self, data, query, start, limit):
+        var_results = []
+        var_count = 0;
+        // Dividir la consulta en palabras
+        var queryWords = query.split(/\s+/);
+  
+        for (var i = start; i < data.length; i++) {
+            if (!data[i] || data[i].length < 6) continue;
+  
+            var categoria = data[i][0] ? normalizeText(data[i][0]) : "";
+            var etiquetas = data[i][1] ? normalizeText(data[i][1].replace(/#/g, "")) : "";
+            var titulo = data[i][2] ? normalizeText(data[i][2]) : "";
+            var link = data[i][3] ? data[i][3].trim() : "";
+            var description = data[i][4] ? data[i][4].trim() : ""; // Columna E
+            var autor = data[i][5] ? normalizeText(data[i][5]) : "desconocido";
+  
+            // Verificar si alguna palabra de la consulta coincide en alguno de los campos
+            var match = queryWords.some(function(word) {
+                return categoria.indexOf(word) !== -1 || etiquetas.indexOf(word) !== -1 || titulo.indexOf(word) !== -1 || autor.indexOf(word) !== -1;
+            });
+  
+            if (match && link !== "") {
+                var_results.push({ link: link, descripcion: description, fuente: autor });
+                var_count++;
+            }
+            if (var_count >= limit) break;
+        }
+        return var_results;
+    }
 
     def setup_handlers(self):
         """Configura los manejadores de comandos y mensajes"""
