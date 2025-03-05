@@ -5,6 +5,7 @@ import io
 import sqlite3
 import json
 import logging
+import string
 import openai
 import time
 from fastapi import FastAPI, Request
@@ -21,15 +22,18 @@ from contextlib import closing
 # Función nueva para extraer palabras clave de la consulta de productos
 def extract_product_keywords(query: str) -> str:
     """
-    Extrae palabras clave relevantes eliminando saludos y palabras comunes que no aportan
-    a la búsqueda de productos.
+    Extrae palabras clave relevantes eliminando saludos, puntuación y palabras comunes
+    que no aportan a la búsqueda de productos.
     """
-    # Lista de stopwords que se eliminarán (puedes ampliarla según tus necesidades)
+    # Lista ampliada de stopwords (puedes ajustar según tus necesidades)
     stopwords = {
         "hola", "podrias", "recomendarme", "por", "favor", "un", "una", "que", "me", "ayude",
-        "a", "dame", "los", "las", "el", "la", "de", "en", "con"
+        "a", "dame", "los", "las", "el", "la", "de", "en", "con", "puedes", "puedo"
     }
-    words = query.split()
+    # Remover la puntuación de la consulta
+    translator = str.maketrans('', '', string.punctuation)
+    cleaned_query = query.translate(translator)
+    words = cleaned_query.split()
     keywords = [word for word in words if word.lower() not in stopwords]
     return " ".join(keywords)
 
