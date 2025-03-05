@@ -18,6 +18,21 @@ import speech_recognition as sr
 import requests
 from contextlib import closing
 
+# Función nueva para extraer palabras clave de la consulta de productos
+def extract_product_keywords(query: str) -> str:
+    """
+    Extrae palabras clave relevantes eliminando saludos y palabras comunes que no aportan
+    a la búsqueda de productos.
+    """
+    # Lista de stopwords que se eliminarán (puedes ampliarla según tus necesidades)
+    stopwords = {
+        "hola", "podrias", "recomendarme", "por", "favor", "un", "una", "que", "me", "ayude",
+        "a", "dame", "los", "las", "el", "la", "de", "en", "con"
+    }
+    words = query.split()
+    keywords = [word for word in words if word.lower() not in stopwords]
+    return " ".join(keywords)
+
 # Configurar logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -225,7 +240,11 @@ class CoachBot:
             # Notificar al usuario que estamos buscando productos
             logger.info(f"Procesando consulta de productos para {chat_id}: {query}")
             
-            products = await self.fetch_products(query)
+            # Extraer palabras clave relevantes de la consulta
+            filtered_query = extract_product_keywords(query)
+            logger.info(f"Consulta filtrada: {filtered_query}")
+            
+            products = await self.fetch_products(filtered_query)
             
             if not products or not isinstance(products, dict):
                 logger.error(f"Respuesta inválida del API de productos: {products}")
@@ -244,7 +263,8 @@ class CoachBot:
             
             product_list = []
             for p in product_data:
-                title = p.get('titulo', 'Sin título')
+                # Usar 'titulo' si existe, de lo contrario usar 'fuente' como título
+                title = p.get('titulo') or p.get('fuente', 'Sin título')
                 desc = p.get('descripcion', 'Sin descripción')
                 link = p.get('link', 'No disponible')
                 
@@ -585,4 +605,3 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
-        
