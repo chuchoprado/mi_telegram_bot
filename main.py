@@ -22,16 +22,14 @@ import string
 # Función para extraer palabras clave de la consulta de productos
 def extract_product_keywords(query: str) -> str:
     """
-    Extrae palabras clave relevantes eliminando saludos, puntuación y palabras comunes
+    Extrae palabras clave relevantes eliminando saludos, agradecimientos, puntuación y palabras comunes
     que no aportan a la búsqueda de productos.
     """
-    # Lista ampliada de stopwords (ajusta según tus necesidades)
     stopwords = {
-        "hola", "podrias", "recomendarme", "por", "favor", "un", "una", "que", "me", "ayude",
-        "a", "dame", "los", "las", "el", "la", "de", "en", "con", "puedes", "puedo",
-        "ok", "ayudarme", "recomendandome", "y", "recomiendame"
+        "hola", "podrias", "recomendarme", "recomiendes", "por", "favor", "un", "una",
+        "que", "me", "ayude", "a", "dame", "los", "las", "el", "la", "de", "en", "con",
+        "puedes", "puedo", "ok", "ayudarme", "recomendandome", "y", "necesito", "gracias", "adicional"
     }
-    # Remover la puntuación de la consulta
     translator = str.maketrans('', '', string.punctuation)
     cleaned_query = query.translate(translator)
     words = cleaned_query.split()
@@ -182,14 +180,12 @@ class CoachBot:
                 chat_id=chat_id,
                 action=ChatAction.TYPING
             )
-            # Verificar si es una consulta de productos
-            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta', 'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos', 'libro', 'libros', 'ebook', 'ebooks', 'amazon' ]
+            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta', 'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos', 'libro', 'libros', 'ebook', 'ebooks', 'amazon']
             if any(keyword in user_message.lower() for keyword in product_keywords):
                 response = await self.process_product_query(chat_id, user_message)
                 self.save_conversation(chat_id, "user", user_message)
                 self.save_conversation(chat_id, "assistant", response)
                 return response
-            # Usar asistente de OpenAI para otras consultas
             response = await self.send_message_to_assistant(chat_id, user_message)
             if not response.strip():
                 logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
@@ -205,7 +201,6 @@ class CoachBot:
         """Procesa consultas relacionadas con productos."""
         try:
             logger.info(f"Procesando consulta de productos para {chat_id}: {query}")
-            # Extraer palabras clave relevantes de la consulta
             filtered_query = extract_product_keywords(query)
             logger.info(f"Consulta filtrada: {filtered_query}")
             products = await self.fetch_products(filtered_query)
@@ -218,14 +213,12 @@ class CoachBot:
             product_data = products.get("data", [])
             if not product_data:
                 return "📦 No encontré productos que coincidan con tu consulta. ¿Puedes ser más específico?"
-            # Limitar a máximo 5 productos para no sobrecargar la respuesta
             product_data = product_data[:5]
             product_list = []
             for p in product_data:
                 title = p.get('titulo') or p.get('fuente', 'Sin título')
                 desc = p.get('descripcion', 'Sin descripción')
                 link = p.get('link', 'No disponible')
-                # Truncar la descripción a 100 caracteres si es muy larga
                 if len(desc) > 100:
                     desc = desc[:97] + "..."
                 product_list.append(f"- *{title}*: {desc}\n  🔗 [Ver producto]({link})")
@@ -543,4 +536,3 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
-
