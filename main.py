@@ -29,7 +29,7 @@ def extract_product_keywords(query: str) -> str:
     stopwords = {
         "hola", "podrias", "recomendarme", "por", "favor", "un", "una", "que", "me", "ayude",
         "a", "dame", "los", "las", "el", "la", "de", "en", "con", "puedes", "puedo",
-        "ok", "ayudarme", "recomendandome", "y", “recomiendame”
+        "ok", "ayudarme", "recomendandome", "y", "recomiendame"
     }
     # Remover la puntuación de la consulta
     translator = str.maketrans('', '', string.punctuation)
