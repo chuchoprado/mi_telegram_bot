@@ -29,7 +29,7 @@ def extract_product_keywords(query: str) -> str:
     stopwords = {
         "hola", "podrias", "recomendarme", "por", "favor", "un", "una", "que", "me", "ayude",
         "a", "dame", "los", "las", "el", "la", "de", "en", "con", "puedes", "puedo",
-        "ok", "ayudarme", "recomendandome", "y"
+        "ok", "ayudarme", "recomendandome", "y", “recomiendame”
     }
     # Remover la puntuación de la consulta
     translator = str.maketrans('', '', string.punctuation)
@@ -183,7 +183,7 @@ class CoachBot:
                 action=ChatAction.TYPING
             )
             # Verificar si es una consulta de productos
-            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta']
+            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta', 'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos', 'libro', 'libros', 'ebook', 'ebooks', 'amazon' ]
             if any(keyword in user_message.lower() for keyword in product_keywords):
                 response = await self.process_product_query(chat_id, user_message)
                 self.save_conversation(chat_id, "user", user_message)
@@ -543,3 +543,4 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error(f"❌ Error procesando webhook: {e}")
         return {"status": "error", "message": str(e)}
+
