@@ -180,8 +180,12 @@ class CoachBot:
                 chat_id=chat_id,
                 action=ChatAction.TYPING
             )
-            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta', 'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos', 'libro', 'libros', 'ebook', 'ebooks', 'amazon']
-            if any(keyword in user_message.lower() for keyword in product_keywords):
+            # Usar la consulta filtrada para determinar si es una consulta de productos
+            filtered_query = extract_product_keywords(user_message)
+            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta', 
+                                'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos', 
+                                'libro', 'libros', 'ebook', 'ebooks', 'amazon']
+            if any(keyword in filtered_query.lower() for keyword in product_keywords):
                 response = await self.process_product_query(chat_id, user_message)
                 self.save_conversation(chat_id, "user", user_message)
                 self.save_conversation(chat_id, "assistant", response)
@@ -259,7 +263,6 @@ class CoachBot:
     def searchProducts(self, data, query, start, limit):
         results = []
         count = 0
-        # Dividir la consulta en palabras usando split
         queryWords = query.split()
         for i in range(start, len(data)):
             if not data[i] or len(data[i]) < 6:
