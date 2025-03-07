@@ -1,7 +1,6 @@
 import os
 import asyncio
 import httpx
-import io
 import sqlite3
 import json
 import logging
@@ -21,8 +20,8 @@ import string
 from gtts import gTTS
 from pydub import AudioSegment
 import tempfile
+import subprocess
 
-# Función para extraer palabras clave de la consulta de productos
 def extract_product_keywords(query: str) -> str:
     """
     Extrae palabras clave relevantes eliminando saludos, agradecimientos, puntuación y palabras comunes
@@ -39,14 +38,12 @@ def extract_product_keywords(query: str) -> str:
     keywords = [word for word in words if word.lower() not in stopwords]
     return " ".join(keywords)
 
-# Configurar logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Crear la aplicación FastAPI
 app = FastAPI()
 
 class CoachBot:
@@ -138,14 +135,11 @@ class CoachBot:
     def save_user_preference(self, chat_id, voice_responses=None, voice_speed=None):
         """Guarda las preferencias de voz del usuario."""
         pref = self.user_preferences.get(chat_id, {'voice_responses': False, 'voice_speed': 1.0})
-        
         if voice_responses is not None:
             pref['voice_responses'] = voice_responses
         if voice_speed is not None:
             pref['voice_speed'] = voice_speed
-            
         self.user_preferences[chat_id] = pref
-        
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -167,17 +161,13 @@ class CoachBot:
     async def set_voice_speed(self, chat_id, text):
         """Establece la velocidad de la voz."""
         try:
-            # Extraer el valor numérico de la velocidad del texto
             parts = text.lower().split("velocidad")
             if len(parts) < 2:
                 return "⚠️ Por favor, especifica un valor para la velocidad, por ejemplo: 'velocidad 1.5'"
-            
             speed_text = parts[1].strip()
             speed = float(speed_text)
-            
             if speed < 0.5 or speed > 2.0:
                 return "⚠️ La velocidad debe estar entre 0.5 (lenta) y 2.0 (rápida)."
-            
             self.save_user_preference(chat_id, voice_speed=speed)
             return f"✅ Velocidad de voz establecida a {speed}x."
         except ValueError:
@@ -186,16 +176,12 @@ class CoachBot:
     async def process_voice_command(self, chat_id, text):
         """Procesa comandos de voz."""
         text_lower = text.lower()
-        
         if "activar voz" in text_lower or "activa voz" in text_lower:
             return await self.enable_voice_responses(chat_id)
-        
         if "desactivar voz" in text_lower or "desactiva voz" in text_lower:
             return await self.disable_voice_responses(chat_id)
-        
         if "velocidad" in text_lower:
             return await self.set_voice_speed(chat_id, text_lower)
-            
         return None  # No es un comando de voz
 
     async def get_or_create_thread(self, chat_id):
@@ -383,34 +369,24 @@ class CoachBot:
         return results
 
     def setup_handlers(self):
-        """Configura los manejadores de comandos y mensajes"""
         try:
             self.telegram_app.add_handler(CommandHandler("start", self.start_command))
             self.telegram_app.add_handler(CommandHandler("help", self.help_command))
             self.telegram_app.add_handler(CommandHandler("voz", self.voice_settings_command))
-            self.telegram_app.add_handler(MessageHandler(
-                filters.TEXT & ~filters.COMMAND,
-                self.route_message
-            ))
-            self.telegram_app.add_handler(MessageHandler(
-                filters.VOICE,
-                self.handle_voice_message
-            ))
+            self.telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.route_message))
+            self.telegram_app.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
             logger.info("Handlers configurados correctamente")
         except Exception as e:
             logger.error(f"Error en setup_handlers: {e}")
             raise
 
     async def voice_settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /voz para configurar las preferencias de voz"""
         chat_id = update.message.chat.id
         if chat_id not in self.verified_users:
             await update.message.reply_text("❌ Por favor, verifica tu email primero usando /start")
             return
-            
         pref = self.user_preferences.get(chat_id, {'voice_responses': False, 'voice_speed': 1.0})
         voice_status = "activadas" if pref['voice_responses'] else "desactivadas"
-        
         help_text = (
             "🎙 *Configuración de voz*\n\n"
             f"Estado actual: Respuestas de voz {voice_status}\n"
@@ -421,11 +397,9 @@ class CoachBot:
             "- 'Velocidad X.X' - Para ajustar la velocidad (entre 0.5 y 2.0)\n\n"
             "También puedes usar estos comandos directamente en cualquier mensaje."
         )
-        
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
     def load_verified_users(self):
-        """Carga usuarios validados desde la base de datos."""
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT chat_id, email FROM users')
@@ -434,7 +408,6 @@ class CoachBot:
                 self.verified_users[chat_id] = email
 
     def save_verified_user(self, chat_id, email, username):
-        """Guarda un usuario validado en la base de datos."""
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -442,13 +415,10 @@ class CoachBot:
                 VALUES (?, ?, ?)
             ''', (chat_id, email, username))
             conn.commit()
-            
-        # Inicializar las preferencias de voz para el nuevo usuario
         if chat_id not in self.user_preferences:
             self.save_user_preference(chat_id, voice_responses=False, voice_speed=1.0)
 
     def save_conversation(self, chat_id, role, content):
-        """Guarda un mensaje de conversación en la base de datos."""
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -458,7 +428,6 @@ class CoachBot:
             conn.commit()
 
     def _init_sheets(self):
-        """Inicializa la conexión con Google Sheets"""
         try:
             if not os.path.exists(self.credentials_path):
                 logger.error(f"Archivo de credenciales no encontrado en: {self.credentials_path}")
@@ -482,7 +451,6 @@ class CoachBot:
             return False
 
     async def async_init(self):
-        """Inicialización asíncrona del bot"""
         try:
             await self.telegram_app.initialize()
             self.load_verified_users()
@@ -495,25 +463,18 @@ class CoachBot:
             raise
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /start"""
         try:
             chat_id = update.message.chat.id
             if chat_id in self.verified_users:
-                await update.message.reply_text(
-                    "👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?"
-                )
+                await update.message.reply_text("👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?")
             else:
-                await update.message.reply_text(
-                    "👋 ¡Hola! Por favor, proporciona tu email para comenzar.\n\n"
-                    "📧 Debe ser un email autorizado para usar el servicio."
-                )
+                await update.message.reply_text("👋 ¡Hola! Por favor, proporciona tu email para comenzar.\n\n📧 Debe ser un email autorizado para usar el servicio.")
             logger.info(f"Comando /start ejecutado por chat_id: {chat_id}")
         except Exception as e:
             logger.error(f"Error en start_command: {e}")
             await update.message.reply_text("❌ Ocurrió un error. Por favor, intenta de nuevo.")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja el comando /help"""
         try:
             help_text = (
                 "🤖 *Comandos disponibles:*\n\n"
@@ -536,7 +497,6 @@ class CoachBot:
             await update.message.reply_text("❌ Error mostrando la ayuda. Intenta de nuevo.")
 
     async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Enruta los mensajes según el estado de verificación del usuario"""
         try:
             chat_id = update.message.chat.id
             if chat_id in self.verified_users:
@@ -545,12 +505,9 @@ class CoachBot:
                 await self.verify_email(update, context)
         except Exception as e:
             logger.error(f"Error en route_message: {e}")
-            await update.message.reply_text(
-                "❌ Ocurrió un error procesando tu mensaje. Por favor, intenta de nuevo."
-            )
+            await update.message.reply_text("❌ Ocurrió un error procesando tu mensaje. Por favor, intenta de nuevo.")
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Maneja los mensajes recibidos después de la verificación"""
         try:
             chat_id = update.message.chat.id
             user_message = update.message.text.strip()
@@ -562,22 +519,16 @@ class CoachBot:
             )
             if response is None or not response.strip():
                 raise ValueError("La respuesta del asistente está vacía")
-                
-            # Determinar si debemos responder con voz
             pref = self.user_preferences.get(chat_id, {'voice_responses': False, 'voice_speed': 1.0})
-            
             if "🔗 [Ver producto]" in response:
-                # Los productos siempre se envían como texto debido a los enlaces
                 await update.message.reply_text(response, parse_mode='Markdown', disable_web_page_preview=True)
-            elif pref['voice_responses'] and len(response) < 4000:  # Limitar tamaño para evitar errores en gTTS
-                # Enviar respuesta como nota de voz
+            elif pref['voice_responses'] and len(response) < 4000:
                 voice_note_path = await self.text_to_speech(response, pref['voice_speed'])
                 await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.RECORD_AUDIO)
                 with open(voice_note_path, 'rb') as audio:
                     await update.message.reply_voice(audio)
-                os.remove(voice_note_path)  # Limpiar el archivo temporal
+                os.remove(voice_note_path)
             else:
-                # Enviar como texto normal
                 await update.message.reply_text(response)
         except asyncio.TimeoutError:
             logger.error(f"⏳ Timeout procesando mensaje de {chat_id}")
@@ -590,28 +541,80 @@ class CoachBot:
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def text_to_speech(self, text, speed=1.0):
-    """Convierte texto a voz con ajuste de velocidad."""
+        """Convierte texto a voz con ajuste de velocidad."""
+        try:
+            temp_dir = os.path.join(os.getcwd(), 'temp')
+            os.makedirs(temp_dir, exist_ok=True)
+            temp_filename = f"voice_{int(time.time())}.mp3"
+            temp_path = os.path.join(temp_dir, temp_filename)
+            # Convertir texto a voz usando gTTS
+            tts = gTTS(text=text, lang='es')
+            tts.save(temp_path)
+            if speed != 1.3:
+                # Ajustar la velocidad usando pydub
+                song = AudioSegment.from_mp3(temp_path)
+                new_song = song.speedup(playback_speed=speed)
+                new_song.export(temp_path, format="mp3")
+            return temp_path
+        except Exception as e:
+            print(f"Error en text_to_speech: {e}")
+            return None
+
+    async def verify_email(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        chat_id = update.message.chat.id
+        user_email = update.message.text.strip().lower()
+        username = update.message.from_user.username or "Unknown"
+        if "@" not in user_email or "." not in user_email:
+            await update.message.reply_text("❌ Por favor, proporciona un email válido.")
+            return
+        try:
+            if not (await self.is_user_whitelisted(user_email)):
+                await update.message.reply_text("❌ Tu email no está en la lista autorizada. Contacta a soporte.")
+                return
+            thread_id = await self.get_or_create_thread(chat_id)
+            self.user_threads[chat_id] = thread_id
+            self.verified_users[chat_id] = user_email
+            self.save_verified_user(chat_id, user_email, username)
+            await update.message.reply_text("✅ Email validado. Ahora puedes hablar conmigo.")
+        except Exception as e:
+            logger.error("❌ Error verificando email para " + str(chat_id) + ": " + str(e))
+            await update.message.reply_text("⚠️ Ocurrió un error verificando tu email.")
+
+    async def is_user_whitelisted(self, email: str) -> bool:
+        try:
+            result = self.sheets_service.spreadsheets().values().get(
+                spreadsheetId=self.SPREADSHEET_ID,
+                range='Usuarios!A:A'
+            ).execute()
+            values = result.get('values', [])
+            whitelist = [row[0].lower() for row in values if row]
+            return email.lower() in whitelist
+        except Exception as e:
+            logger.error("Error verificando whitelist: " + str(e))
+            return False
+
+try:
+    bot = CoachBot()
+except Exception as e:
+    logger.error("Error crítico inicializando el bot: " + str(e))
+    raise
+
+@app.on_event("startup")
+async def startup_event():
     try:
-        # Crear directorio temporal si no existe
-        temp_dir = os.path.join(os.getcwd(), 'temp')
-        os.makedirs(temp_dir, exist_ok=True)
-        
-        # Generar nombre de archivo temporal
-        temp_filename = f"voice_{int(time.time())}.mp3"
-        temp_path = os.path.join(temp_dir, temp_filename)
-        
-        # Aquí iría el código para convertir el texto a voz
-        # Por ejemplo, usando gTTS:
-        # tts = gTTS(text=text, lang='es')
-        # tts.save(temp_path)
-        
-        # Aplicar ajuste de velocidad si es necesario
-        if speed != 1.3:
-            # Código para ajustar la velocidad del audio
-            pass
-        
-        return temp_path
+        await bot.async_init()
+        logger.info("Aplicación iniciada correctamente")
     except Exception as e:
-        print(f"Error en text_to_speech: {e}")
-        return None
+        logger.error("❌ Error al iniciar la aplicación: " + str(e))
+
+@app.post("/webhook")
+async def webhook(request: Request):
+    try:
+        data = await request.json()
+        update = Update.de_json(data, bot.telegram_app.bot)
+        await bot.telegram_app.update_queue.put(update)
+        return {"status": "ok"}
+    except Exception as e:
+        logger.error("❌ Error procesando webhook: " + str(e))
+        return {"status": "error", "message": str(e)}
 
