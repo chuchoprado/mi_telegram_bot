@@ -590,11 +590,28 @@ class CoachBot:
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def text_to_speech(self, text, speed=1.0):
-        """Convierte texto a voz con ajuste de velocidad."""
-        try:
-            # Crear directorio temporal si no existe
-            temp_dir = os.path.join(os.getcwd(), 'temp')
-            os.makedirs(temp_dir, exist_ok=True)
-            
-            # Generar nombre de archivo temporal
-            temp_filename = f"voice_{int(time
+    """Convierte texto a voz con ajuste de velocidad."""
+    try:
+        # Crear directorio temporal si no existe
+        temp_dir = os.path.join(os.getcwd(), 'temp')
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Generar nombre de archivo temporal
+        temp_filename = f"voice_{int(time.time())}.mp3"
+        temp_path = os.path.join(temp_dir, temp_filename)
+        
+        # Aquí iría el código para convertir el texto a voz
+        # Por ejemplo, usando una biblioteca como gTTS, pyttsx3 o similar
+        # tts = gTTS(text=text, lang='es')
+        # tts.save(temp_path)
+        
+        # Aplicar ajuste de velocidad si es necesario
+        if speed != 1.3:
+            # Código para ajustar la velocidad del audio
+            pass
+        
+        return temp_path
+    
+    except Exception as e:
+        print(f"Error en text_to_speech: {e}")
+        return None
