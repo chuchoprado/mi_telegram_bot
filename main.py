@@ -184,7 +184,7 @@ class CoachBot:
             filtered_query = extract_product_keywords(user_message)
             product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta', 
                                 'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos', 
-                                'libro', 'libros', 'ebook', 'ebooks', 'amazon']
+                                'libro', 'libros', 'ebook', 'ebooks', 'amazon', 'meditacion']
             if any(keyword in filtered_query.lower() for keyword in product_keywords):
                 response = await self.process_product_query(chat_id, user_message)
                 self.save_conversation(chat_id, "user", user_message)
@@ -451,7 +451,7 @@ class CoachBot:
             chat_id = update.message.chat.id
             voice_file = await update.message.voice.get_file()
             voice_file_path = f"{chat_id}_voice_note.ogg"
-            await voice_file.download(voice_file_path)
+            await voice_file.download_to_drive(voice_file_path)
             recognizer = sr.Recognizer()
             with sr.AudioFile(voice_file_path) as source:
                 audio = recognizer.record(source)
