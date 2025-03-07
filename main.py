@@ -590,8 +590,8 @@ class CoachBot:
             await update.message.reply_text("⚠️ Ocurrió un error inesperado. Inténtalo más tarde.")
 
     async def text_to_speech(self, text, speed=1.0):
-    """Convierte texto a voz con ajuste de velocidad."""
-    try:
+       """Convierte texto a voz con ajuste de velocidad."""
+       try:
         # Crear directorio temporal si no existe
         temp_dir = os.path.join(os.getcwd(), 'temp')
         os.makedirs(temp_dir, exist_ok=True)
@@ -612,7 +612,7 @@ class CoachBot:
         
         return temp_path
     
-    except Exception as e:
+       except Exception as e:
         print(f"Error en text_to_speech: {e}")
         return None
 
