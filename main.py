@@ -615,3 +615,4 @@ class CoachBot:
     except Exception as e:
         print(f"Error en text_to_speech: {e}")
         return None
+
