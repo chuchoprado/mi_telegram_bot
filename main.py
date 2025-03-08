@@ -38,6 +38,17 @@ def extract_product_keywords(query: str) -> str:
     keywords = [word for word in words if word.lower() not in stopwords]
     return " ".join(keywords)
 
+def normalizeText(text: str) -> str:
+    return text.lower().strip()
+
+def convertOgaToWav(oga_path, wav_path):
+    try:
+        subprocess.run(["ffmpeg", "-i", oga_path, wav_path], check=True)
+        return True
+    except Exception as e:
+        logger.error("Error converting audio file: " + str(e))
+        return False
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -65,15 +76,14 @@ class CoachBot:
 
         # Inicializar cliente AsyncOpenAI
         self.client = AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
-
         self.sheets_service = None
         self.started = False
         self.verified_users = {}
         self.conversation_history = {}
         self.user_threads = {}
-        self.pending_requests = set()  # Conjunto para rastrear solicitudes en curso
+        self.pending_requests = set()
         self.db_path = 'bot_data.db'
-        self.user_preferences = {}  # Diccionario para almacenar preferencias de usuario
+        self.user_preferences = {}
 
         # Comandos de voz
         self.voice_commands = {
@@ -91,7 +101,6 @@ class CoachBot:
         self._load_user_preferences()
 
     def _init_db(self):
-        """Inicializar la base de datos y crear las tablas necesarias."""
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -121,7 +130,6 @@ class CoachBot:
             conn.commit()
 
     def _load_user_preferences(self):
-        """Carga las preferencias de usuario desde la base de datos."""
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT chat_id, voice_responses, voice_speed FROM user_preferences')
@@ -133,7 +141,6 @@ class CoachBot:
                 }
 
     def save_user_preference(self, chat_id, voice_responses=None, voice_speed=None):
-        """Guarda las preferencias de voz del usuario."""
         pref = self.user_preferences.get(chat_id, {'voice_responses': False, 'voice_speed': 1.0})
         if voice_responses is not None:
             pref['voice_responses'] = voice_responses
@@ -149,17 +156,14 @@ class CoachBot:
             conn.commit()
 
     async def enable_voice_responses(self, chat_id):
-        """Activa las respuestas por voz para un usuario."""
         self.save_user_preference(chat_id, voice_responses=True)
         return "✅ Respuestas por voz activadas. Ahora te responderé con notas de voz."
 
     async def disable_voice_responses(self, chat_id):
-        """Desactiva las respuestas por voz para un usuario."""
         self.save_user_preference(chat_id, voice_responses=False)
         return "✅ Respuestas por voz desactivadas. Volveré a responderte con texto."
 
     async def set_voice_speed(self, chat_id, text):
-        """Establece la velocidad de la voz."""
         try:
             parts = text.lower().split("velocidad")
             if len(parts) < 2:
@@ -174,7 +178,6 @@ class CoachBot:
             return "⚠️ No pude entender el valor de velocidad. Usa un número como 0.8, 1.0, 1.5, etc."
 
     async def process_voice_command(self, chat_id, text):
-        """Procesa comandos de voz."""
         text_lower = text.lower()
         if "activar voz" in text_lower or "activa voz" in text_lower:
             return await self.enable_voice_responses(chat_id)
@@ -182,10 +185,9 @@ class CoachBot:
             return await self.disable_voice_responses(chat_id)
         if "velocidad" in text_lower:
             return await self.set_voice_speed(chat_id, text_lower)
-        return None  # No es un comando de voz
+        return None
 
     async def get_or_create_thread(self, chat_id):
-        """Obtiene un thread existente o crea uno nuevo en OpenAI Assistant."""
         if chat_id in self.user_threads:
             return self.user_threads[chat_id]
         try:
@@ -197,9 +199,6 @@ class CoachBot:
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
-        """
-        Envía un mensaje al asistente de OpenAI y espera su respuesta.
-        """
         if chat_id in self.pending_requests:
             return "⏳ Ya estoy procesando tu solicitud anterior. Por favor espera."
         self.pending_requests.add(chat_id)
@@ -252,25 +251,17 @@ class CoachBot:
                 self.pending_requests.remove(chat_id)
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-        """Procesa los mensajes de texto recibidos."""
         try:
             chat_id = update.message.chat.id
             if not user_message.strip():
                 return "⚠️ No se recibió un mensaje válido."
-            
-            # Procesar comandos de voz si hay alguno
             voice_command_response = await self.process_voice_command(chat_id, user_message)
             if voice_command_response:
                 return voice_command_response
-                
-            await context.bot.send_chat_action(
-                chat_id=chat_id,
-                action=ChatAction.TYPING
-            )
-            # Usar la consulta filtrada para determinar si es una consulta de productos
+            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
             filtered_query = extract_product_keywords(user_message)
-            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta', 
-                                'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos', 
+            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta',
+                                'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos',
                                 'libro', 'libros', 'ebook', 'ebooks', 'amazon', 'meditacion']
             if any(keyword in filtered_query.lower() for keyword in product_keywords):
                 response = await self.process_product_query(chat_id, user_message)
@@ -289,7 +280,6 @@ class CoachBot:
             return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_product_query(self, chat_id: int, query: str) -> str:
-        """Procesa consultas relacionadas con productos."""
         try:
             logger.info(f"Procesando consulta de productos para {chat_id}: {query}")
             filtered_query = extract_product_keywords(query)
@@ -320,7 +310,6 @@ class CoachBot:
             return "⚠️ Ocurrió un error al buscar productos. Por favor, intenta más tarde."
 
     async def fetch_products(self, query):
-        """Obtiene productos desde la API de Google Sheets."""
         url = "https://script.google.com/macros/s/AKfycbzb1VZCKQgMCtOyHeC8QX_0lS0qHzue3HNeNf9YqdT7gP3EgXfoFuO-SQ8igHvZ5As0_A/exec"
         params = {"query": query}
         logger.info(f"Consultando Google Sheets con: {params}")
@@ -379,6 +368,42 @@ class CoachBot:
         except Exception as e:
             logger.error(f"Error en setup_handlers: {e}")
             raise
+
+    async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        try:
+            chat_id = update.message.chat.id
+            voice_file = await update.message.voice.get_file()
+            oga_file_path = f"{chat_id}_voice_note.oga"
+            await voice_file.download_to_drive(oga_file_path)
+            wav_file_path = f"{chat_id}_voice_note.wav"
+            if not convertOgaToWav(oga_file_path, wav_file_path):
+                await update.message.reply_text("⚠️ No se pudo procesar el archivo de audio.")
+                return
+            recognizer = sr.Recognizer()
+            with sr.AudioFile(wav_file_path) as source:
+                audio = recognizer.record(source)
+            try:
+                user_message = recognizer.recognize_google(audio, language='es-ES')
+                logger.info("Transcripción de voz: " + user_message)
+                await update.message.reply_text(f"📝 Tu mensaje: \"{user_message}\"")
+                response = await self.process_text_message(update, context, user_message)
+                await update.message.reply_text(response)
+            except sr.UnknownValueError:
+                await update.message.reply_text("⚠️ No pude entender la nota de voz. Intenta de nuevo.")
+            except sr.RequestError as e:
+                logger.error("Error en el servicio de reconocimiento de voz de Google: " + str(e))
+                await update.message.reply_text("⚠️ Ocurrió un error con el servicio de reconocimiento de voz.")
+        except Exception as e:
+            logger.error("Error manejando mensaje de voz: " + str(e))
+            await update.message.reply_text("⚠️ Ocurrió un error procesando la nota de voz.")
+        finally:
+            try:
+                if os.path.exists(oga_file_path):
+                    os.remove(oga_file_path)
+                if os.path.exists(wav_file_path):
+                    os.remove(wav_file_path)
+            except Exception as e:
+                logger.error("Error eliminando archivos temporales: " + str(e))
 
     async def voice_settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
@@ -468,7 +493,9 @@ class CoachBot:
             if chat_id in self.verified_users:
                 await update.message.reply_text("👋 ¡Bienvenido de nuevo! ¿En qué puedo ayudarte hoy?")
             else:
-                await update.message.reply_text("👋 ¡Hola! Por favor, proporciona tu email para comenzar.\n\n📧 Debe ser un email autorizado para usar el servicio.")
+                await update.message.reply_text(
+                    "👋 ¡Hola! Por favor, proporciona tu email para comenzar.\n\n📧 Debe ser un email autorizado para usar el servicio."
+                )
             logger.info(f"Comando /start ejecutado por chat_id: {chat_id}")
         except Exception as e:
             logger.error(f"Error en start_command: {e}")
@@ -505,7 +532,9 @@ class CoachBot:
                 await self.verify_email(update, context)
         except Exception as e:
             logger.error(f"Error en route_message: {e}")
-            await update.message.reply_text("❌ Ocurrió un error procesando tu mensaje. Por favor, intenta de nuevo.")
+            await update.message.reply_text(
+                "❌ Ocurrió un error procesando tu mensaje. Por favor, intenta de nuevo."
+            )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
@@ -547,11 +576,9 @@ class CoachBot:
             os.makedirs(temp_dir, exist_ok=True)
             temp_filename = f"voice_{int(time.time())}.mp3"
             temp_path = os.path.join(temp_dir, temp_filename)
-            # Convertir texto a voz usando gTTS
             tts = gTTS(text=text, lang='es')
             tts.save(temp_path)
             if speed != 1.3:
-                # Ajustar la velocidad usando pydub
                 song = AudioSegment.from_mp3(temp_path)
                 new_song = song.speedup(playback_speed=speed)
                 new_song.export(temp_path, format="mp3")
@@ -617,4 +644,3 @@ async def webhook(request: Request):
     except Exception as e:
         logger.error("❌ Error procesando webhook: " + str(e))
         return {"status": "error", "message": str(e)}
-
