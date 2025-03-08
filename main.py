@@ -85,6 +85,9 @@ class CoachBot:
         self.db_path = 'bot_data.db'
         self.user_preferences = {}
 
+        # Diccionario para locks por cada chat (para evitar procesar mensajes concurrentes)
+        self.locks = {}
+
         # Comandos de voz
         self.voice_commands = {
             "activar voz": self.enable_voice_responses,
@@ -251,33 +254,36 @@ class CoachBot:
                 self.pending_requests.remove(chat_id)
 
     async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-        try:
-            chat_id = update.message.chat.id
-            if not user_message.strip():
-                return "⚠️ No se recibió un mensaje válido."
-            voice_command_response = await self.process_voice_command(chat_id, user_message)
-            if voice_command_response:
-                return voice_command_response
-            await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-            filtered_query = extract_product_keywords(user_message)
-            product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta',
-                                'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos',
-                                'libro', 'libros', 'ebook', 'ebooks', 'amazon', 'meditacion']
-            if any(keyword in filtered_query.lower() for keyword in product_keywords):
-                response = await self.process_product_query(chat_id, user_message)
+        chat_id = update.message.chat.id
+        # Obtener o crear un lock específico para este chat
+        lock = self.locks.setdefault(chat_id, asyncio.Lock())
+        async with lock:
+            try:
+                if not user_message.strip():
+                    return "⚠️ No se recibió un mensaje válido."
+                voice_command_response = await self.process_voice_command(chat_id, user_message)
+                if voice_command_response:
+                    return voice_command_response
+                await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
+                filtered_query = extract_product_keywords(user_message)
+                product_keywords = ['producto', 'productos', 'comprar', 'precio', 'costo', 'tienda', 'venta',
+                                    'suplemento', 'meditacion', 'vitaminas', 'vitamina', 'suplementos',
+                                    'libro', 'libros', 'ebook', 'ebooks', 'amazon', 'meditacion']
+                if any(keyword in filtered_query.lower() for keyword in product_keywords):
+                    response = await self.process_product_query(chat_id, user_message)
+                    self.save_conversation(chat_id, "user", user_message)
+                    self.save_conversation(chat_id, "assistant", response)
+                    return response
+                response = await self.send_message_to_assistant(chat_id, user_message)
+                if not response.strip():
+                    logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
+                    return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
                 self.save_conversation(chat_id, "user", user_message)
                 self.save_conversation(chat_id, "assistant", response)
                 return response
-            response = await self.send_message_to_assistant(chat_id, user_message)
-            if not response.strip():
-                logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
-                return "⚠️ No obtuve una respuesta válida del asistente. Intenta de nuevo."
-            self.save_conversation(chat_id, "user", user_message)
-            self.save_conversation(chat_id, "assistant", response)
-            return response
-        except Exception as e:
-            logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
-            return "⚠️ Ocurrió un error al procesar tu mensaje."
+            except Exception as e:
+                logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
+                return "⚠️ Ocurrió un error al procesar tu mensaje."
 
     async def process_product_query(self, chat_id: int, query: str) -> str:
         try:
