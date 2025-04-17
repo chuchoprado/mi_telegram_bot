@@ -1,6 +1,3 @@
-# COACHBOT CON FUNCIONES COMPLETAS Y MEJORAS EN RESPUESTA A NOTAS DE VOZ
-# INCLUYE: manejo de cola, respuesta en voz si se recibe voz, sin mostrar texto "Has dicho" ni "procesando"
-
 import os
 import asyncio
 import httpx
@@ -11,6 +8,7 @@ import openai
 import time
 from fastapi import FastAPI, Request
 from telegram import Update
+from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import AsyncOpenAI
 import speech_recognition as sr
@@ -107,9 +105,7 @@ class CoachBot:
     async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         message = update.message.text.strip()
-        if chat_id in self.user_sent_voice:
-            self.user_sent_voice.remove(chat_id)  # Responder con voz solo si fue nota de voz
-            self.user_preferences[chat_id]['voice_responses'] = True
+        
         await self.task_queue.put((chat_id, update, context, message))
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,6 +121,10 @@ class CoachBot:
             try:
                 user_text = recognizer.recognize_google(audio, language="es-ES")
                 self.user_sent_voice.add(chat_id)
+                if chat_id not in self.user_preferences:
+                    self.user_preferences[chat_id] = {'voice_responses': True, 'voice_speed': 1.0}
+                else:
+                    self.user_preferences[chat_id]['voice_responses'] = True
                 await self.task_queue.put((chat_id, update, context, user_text))
             except:
                 await update.message.reply_text("⚠️ No pude entender la nota de voz.")
@@ -154,6 +154,8 @@ class CoachBot:
 
     async def send_response(self, update, chat_id, text):
         pref = self.user_preferences.get(chat_id, {"voice_responses": False, "voice_speed": 1.0})
+        await update.message.chat.send_action(action=ChatAction.TYPING)
+        await asyncio.sleep(1.5)
         if pref["voice_responses"]:
             path = await self.text_to_speech(text, pref["voice_speed"])
             if path:
