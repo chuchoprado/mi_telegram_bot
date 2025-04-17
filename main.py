@@ -1,3 +1,6 @@
+# COACHBOT CON FUNCIONES COMPLETAS Y MEJORAS EN RESPUESTA A NOTAS DE VOZ
+# INCLUYE: manejo de cola, respuesta en voz si se recibe voz, sin mostrar texto "Has dicho" ni "procesando"
+
 import os
 import asyncio
 import httpx
@@ -8,16 +11,12 @@ import openai
 import time
 from fastapi import FastAPI, Request
 from telegram import Update
-from telegram.constants import ChatAction
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from openai import AsyncOpenAI
 import speech_recognition as sr
-import requests
 from contextlib import closing
-import string
 from gtts import gTTS
 from pydub import AudioSegment
-import tempfile
 import subprocess
 import re
 
@@ -30,10 +29,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 
 def remove_source_references(text: str) -> str:
-    return re.sub(r'\【[\d:]+\u2020source\】', '', text)
-
-def normalizeText(text: str) -> str:
-    return text.lower().strip()
+    return re.sub(r'\【[\d:]+†source\】', '', text)
 
 def convertOgaToWav(oga_path, wav_path):
     try:
@@ -59,6 +55,7 @@ class CoachBot:
         self.db_path = 'bot_data.db'
         self.user_preferences = {}
         self.user_threads = {}
+        self.user_sent_voice = set()
 
         self._init_db()
         self._load_user_preferences()
@@ -110,8 +107,10 @@ class CoachBot:
     async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         message = update.message.text.strip()
+        if chat_id in self.user_sent_voice:
+            self.user_sent_voice.remove(chat_id)  # Responder con voz solo si fue nota de voz
+            self.user_preferences[chat_id]['voice_responses'] = True
         await self.task_queue.put((chat_id, update, context, message))
-        await update.message.reply_text("⏳ Estoy procesando tu mensaje...")
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
@@ -125,8 +124,8 @@ class CoachBot:
                 audio = recognizer.record(source)
             try:
                 user_text = recognizer.recognize_google(audio, language="es-ES")
+                self.user_sent_voice.add(chat_id)
                 await self.task_queue.put((chat_id, update, context, user_text))
-                await update.message.reply_text(f"🗣️ Has dicho: {user_text}")
             except:
                 await update.message.reply_text("⚠️ No pude entender la nota de voz.")
         else:
