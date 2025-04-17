@@ -1,3 +1,6 @@
+# COACHBOT CON FUNCIONES COMPLETAS Y MEJORAS EN RESPUESTA A NOTAS DE VOZ
+# INCLUYE: manejo de cola, respuesta en voz si se recibe voz, sin mostrar texto "Has dicho" ni "procesando"
+
 import os
 import asyncio
 import httpx
@@ -134,16 +137,34 @@ class CoachBot:
         os.remove(wav_file)
 
     async def get_openai_response(self, chat_id, message):
-        thread_id = await self.get_or_create_thread(chat_id)
-        await self.client.beta.threads.messages.create(thread_id=thread_id, role="user", content=message)
-        run = await self.client.beta.threads.runs.create(thread_id=thread_id, assistant_id=self.ASSISTANT_ID)
-        while True:
-            run_status = await self.client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
-            if run_status.status == 'completed':
-                break
-            await asyncio.sleep(1)
-        messages = await self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
-        return remove_source_references(messages.data[0].content[0].text.value)
+        try:
+            thread_id = await self.get_or_create_thread(chat_id)
+            await self.client.beta.threads.messages.create(thread_id=thread_id, role="user", content=message)
+            run = await self.client.beta.threads.runs.create(thread_id=thread_id, assistant_id=self.ASSISTANT_ID)
+
+            max_wait_time = 300  # 5 minutos
+            check_interval = 1
+            total_waited = 0
+
+            while True:
+                run_status = await self.client.beta.threads.runs.retrieve(thread_id=thread_id, run_id=run.id)
+                if run_status.status == 'completed':
+                    break
+                elif run_status.status in ['failed', 'cancelled', 'expired']:
+                    logger.error(f"❌ Run fallido: {run_status.status}")
+                    raise Exception(f"Falló la ejecución con estado: {run_status.status}")
+                await asyncio.sleep(check_interval)
+                total_waited += check_interval
+                if total_waited > max_wait_time:
+                    logger.error(f"⚠️ Tiempo de espera excedido para OpenAI en thread {thread_id}")
+                    raise Exception("La respuesta del asistente tardó demasiado. Intenta nuevamente más tarde.")
+
+            messages = await self.client.beta.threads.messages.list(thread_id=thread_id, order="desc", limit=1)
+            return remove_source_references(messages.data[0].content[0].text.value)
+
+        except Exception as e:
+            logger.error(f"❌ Error en get_openai_response: {e}")
+            return "⚠️ Hubo un problema procesando tu mensaje. Intenta nuevamente."
 
     async def get_or_create_thread(self, chat_id):
         if chat_id in self.user_threads:
