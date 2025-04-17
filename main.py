@@ -178,83 +178,79 @@ class CoachBot:
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
         if chat_id in self.pending_requests:
             return "⏳ Ya estoy procesando tu solicitud anterior. Por favor espera."
-        self.pending_requests.add(chat_id)
-        try:
-            thread_id = await self.get_or_create_thread(chat_id)
-            if not thread_id:
-                self.pending_requests.remove(chat_id)
-                return "❌ No se pudo establecer la conexión con el asistente."
-            await self.client.beta.threads.messages.create(
-                thread_id=thread_id,
-                role="user",
-                content=user_message
-            )
-            run = await self.client.beta.threads.runs.create(
-                thread_id=thread_id,
-                assistant_id=self.assistant_id
-            )
-            start_time = time.time()
-            while True:
-                run_status = await self.client.beta.threads.runs.retrieve(
-                    thread_id=thread_id,
-                    run_id=run.id
-                )
-                if run_status.status == 'completed':
-                    break
-                elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    logger.error(f"Detalles del estado de ejecución: {run_status}")
-                    if hasattr(run_status, 'last_error') and run_status.last_error and run_status.last_error.code == 'rate_limit_exceeded':
-                        raise Exception("Cuota de OpenAI excedida: " + run_status.last_error.message)
-                    raise Exception(f"La ejecución falló con el estado: {run_status.status}")
-                elif time.time() - start_time > 60:
-                    raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
-                await asyncio.sleep(1)
-            messages = await self.client.beta.threads.messages.list(
-                thread_id=thread_id,
-                order="desc",
-                limit=1
-            )
-            if not messages.data or not messages.data[0].content:
-                self.pending_requests.remove(chat_id)
-                return "⚠️ La respuesta del asistente está vacía. Intenta de nuevo más tarde."
-            assistant_message = messages.data[0].content[0].text.value
-            assistant_message = remove_source_references(assistant_message)
-            self.conversation_history.setdefault(chat_id, []).append({
-                "role": "assistant",
-                "content": assistant_message
-            })
-            return assistant_message
-        except Exception as e:
-            logger.error(f"❌ Error procesando el mensaje: {e}")
-            error_message = str(e)
-            if "Can't add messages to" in error_message:
-                return "⏳ Por favor espera, aún estoy procesando tu solicitud anterior."
-            return "⚠️ Hubo un error procesando tu mensaje: " + error_message
-        finally:
-            if chat_id in self.pending_requests:
-                self.pending_requests.remove(chat_id)
-
-    async def process_text_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE, user_message: str) -> str:
-        chat_id = update.message.chat.id
+        
+        # Usar un lock específico para cada chat_id
         lock = self.locks.setdefault(chat_id, asyncio.Lock())
+        
+        # Bloqueo para evitar que dos mensajes se procesen simultáneamente
         async with lock:
+            self.pending_requests.add(chat_id)
             try:
-                if not user_message.strip():
-                    return "⚠️ No se recibió un mensaje válido."
-                voice_command_response = await self.process_voice_command(chat_id, user_message)
-                if voice_command_response:
-                    return voice_command_response
-                await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-                response = await self.send_message_to_assistant(chat_id, user_message)
-                if not response.strip():
-                    logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
-                    return "⚠️ No recibí una respuesta válida del asistente. Por favor intenta nuevamente."
-                self.save_conversation(chat_id, "user", user_message)
-                self.save_conversation(chat_id, "assistant", response)
-                return response
+                # Verificar si hay una ejecución activa antes de continuar
+                thread_id = await self.get_or_create_thread(chat_id)
+                if not thread_id:
+                    self.pending_requests.remove(chat_id)
+                    return "❌ No se pudo establecer la conexión con el asistente."
+                
+                # Enviar el mensaje al hilo de OpenAI
+                await self.client.beta.threads.messages.create(
+                    thread_id=thread_id,
+                    role="user",
+                    content=user_message
+                )
+                
+                # Crear la ejecución de OpenAI
+                run = await self.client.beta.threads.runs.create(
+                    thread_id=thread_id,
+                    assistant_id=self.assistant_id
+                )
+                start_time = time.time()
+                
+                # Esperar a que la ejecución se complete
+                while True:
+                    run_status = await self.client.beta.threads.runs.retrieve(
+                        thread_id=thread_id,
+                        run_id=run.id
+                    )
+                    if run_status.status == 'completed':
+                        break
+                    elif run_status.status in ['failed', 'cancelled', 'expired']:
+                        logger.error(f"Detalles del estado de ejecución: {run_status}")
+                        if hasattr(run_status, 'last_error') and run_status.last_error and run_status.last_error.code == 'rate_limit_exceeded':
+                            raise Exception("Cuota de OpenAI excedida: " + run_status.last_error.message)
+                        raise Exception(f"La ejecución falló con el estado: {run_status.status}")
+                    elif time.time() - start_time > 60:
+                        raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
+                    await asyncio.sleep(1)
+                
+                # Obtener la respuesta del asistente
+                messages = await self.client.beta.threads.messages.list(
+                    thread_id=thread_id,
+                    order="desc",
+                    limit=1
+                )
+                
+                if not messages.data or not messages.data[0].content:
+                    self.pending_requests.remove(chat_id)
+                    return "⚠️ La respuesta del asistente está vacía. Intenta de nuevo más tarde."
+                
+                assistant_message = messages.data[0].content[0].text.value
+                assistant_message = remove_source_references(assistant_message)
+                self.conversation_history.setdefault(chat_id, []).append({
+                    "role": "assistant",
+                    "content": assistant_message
+                })
+                
+                return assistant_message
             except Exception as e:
-                logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
-                return "⚠️ Hubo un error procesando tu mensaje."
+                logger.error(f"❌ Error procesando el mensaje: {e}")
+                error_message = str(e)
+                if "Can't add messages to" in error_message:
+                    return "⏳ Por favor espera, aún estoy procesando tu solicitud anterior."
+                return "⚠️ Hubo un error procesando tu mensaje: " + error_message
+            finally:
+                if chat_id in self.pending_requests:
+                    self.pending_requests.remove(chat_id)
 
     def setup_handlers(self):
         try:
@@ -282,7 +278,7 @@ class CoachBot:
             with sr.AudioFile(wav_file_path) as source:
                 audio = recognizer.record(source)
             try:
-                user_message = recognizer.recognize_google(audio, language='en-US')
+                user_message = recognizer.recognize_google(audio, language='es-ES')  # Cambié a español
                 logger.info("Transcripción de voz: " + user_message)
                 await update.message.reply_text(f"📝 Tu mensaje: \"{user_message}\"")
                 response = await self.process_text_message(update, context, user_message)
