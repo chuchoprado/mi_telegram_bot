@@ -23,7 +23,7 @@ import re
 
 def remove_source_references(text: str) -> str:
     """
-    Removes source reference markers like "" from the text.
+    Elimina las referencias de fuente como "" del texto.
     """
     return re.sub(r'\【[\d:]+†source\】', '', text)
 
@@ -35,7 +35,7 @@ def convertOgaToWav(oga_path, wav_path):
         subprocess.run(["ffmpeg", "-i", oga_path, wav_path], check=True)
         return True
     except Exception as e:
-        logger.error("Error converting audio file: " + str(e))
+        logger.error("Error al convertir el archivo de audio: " + str(e))
         return False
 
 logging.basicConfig(
@@ -48,7 +48,7 @@ app = FastAPI()
 
 class CoachBot:
     def __init__(self):
-        # Validate required environment variables
+        # Validar las variables de entorno requeridas
         required_env_vars = {
             'TELEGRAM_TOKEN': os.getenv('TELEGRAM_TOKEN'),
             'ASSISTANT_ID': os.getenv('ASSISTANT_ID'),
@@ -56,11 +56,11 @@ class CoachBot:
         }
         missing_vars = [var for var, value in required_env_vars.items() if not value]
         if missing_vars:
-            raise EnvironmentError(f"Missing required environment variables: {', '.join(missing_vars)}")
+            raise EnvironmentError(f"Faltan las siguientes variables de entorno requeridas: {', '.join(missing_vars)}")
         self.TELEGRAM_TOKEN = required_env_vars['TELEGRAM_TOKEN']
         self.assistant_id = required_env_vars['ASSISTANT_ID']
 
-        # Initialize AsyncOpenAI client
+        # Inicializar el cliente AsyncOpenAI
         self.client = AsyncOpenAI(api_key=required_env_vars['OPENAI_API_KEY'])
         self.started = False
         self.conversation_history = {}
@@ -69,17 +69,17 @@ class CoachBot:
         self.db_path = 'bot_data.db'
         self.user_preferences = {}
 
-        # Dictionary for locks per chat to prevent concurrent message processing
+        # Diccionario para bloquear chats y evitar procesamiento concurrente de mensajes
         self.locks = {}
 
-        # Voice commands (using English commands)
+        # Comandos de voz (utilizando comandos en inglés)
         self.voice_commands = {
             "activate voice": self.enable_voice_responses,
             "deactivate voice": self.disable_voice_responses,
             "speed": self.set_voice_speed,
         }
 
-        # Initialize the Telegram Application
+        # Inicializar la aplicación de Telegram
         self.telegram_app = Application.builder().token(self.TELEGRAM_TOKEN).build()
 
         self._init_db()
@@ -134,25 +134,25 @@ class CoachBot:
 
     async def enable_voice_responses(self, chat_id):
         self.save_user_preference(chat_id, voice_responses=True)
-        return "✅ Voice responses activated. I'll now reply with voice messages."
+        return "✅ Respuestas de voz activadas. Ahora responderé con mensajes de voz."
 
     async def disable_voice_responses(self, chat_id):
         self.save_user_preference(chat_id, voice_responses=False)
-        return "✅ Voice responses deactivated. I'll reply with text messages."
+        return "✅ Respuestas de voz desactivadas. Ahora responderé con mensajes de texto."
 
     async def set_voice_speed(self, chat_id, text):
         try:
             parts = text.lower().split("speed")
             if len(parts) < 2:
-                return "⚠️ Please specify a value for speed, for example: 'speed 1.5'"
+                return "⚠️ Por favor, especifica un valor para la velocidad, por ejemplo: 'speed 1.5'"
             speed_text = parts[1].strip()
             speed = float(speed_text)
             if speed < 0.5 or speed > 2.0:
-                return "⚠️ Speed must be between 0.5 (slow) and 2.0 (fast)."
+                return "⚠️ La velocidad debe estar entre 0.5 (lento) y 2.0 (rápido)."
             self.save_user_preference(chat_id, voice_speed=speed)
-            return f"✅ Voice speed set to {speed}x."
+            return f"✅ Velocidad de voz ajustada a {speed}x."
         except ValueError:
-            return "⚠️ I couldn't understand the speed value. Use a number like 0.8, 1.0, 1.5, etc."
+            return "⚠️ No pude entender el valor de la velocidad. Usa un número como 0.8, 1.0, 1.5, etc."
 
     async def process_voice_command(self, chat_id, text):
         text_lower = text.lower()
@@ -172,18 +172,18 @@ class CoachBot:
             self.user_threads[chat_id] = thread.id
             return thread.id
         except Exception as e:
-            logger.error(f"❌ Error creating thread for {chat_id}: {e}")
+            logger.error(f"❌ Error creando el hilo para {chat_id}: {e}")
             return None
 
     async def send_message_to_assistant(self, chat_id: int, user_message: str) -> str:
         if chat_id in self.pending_requests:
-            return "⏳ I'm already processing your previous request. Please wait."
+            return "⏳ Ya estoy procesando tu solicitud anterior. Por favor espera."
         self.pending_requests.add(chat_id)
         try:
             thread_id = await self.get_or_create_thread(chat_id)
             if not thread_id:
                 self.pending_requests.remove(chat_id)
-                return "❌ Could not establish connection with the assistant."
+                return "❌ No se pudo establecer la conexión con el asistente."
             await self.client.beta.threads.messages.create(
                 thread_id=thread_id,
                 role="user",
@@ -202,12 +202,12 @@ class CoachBot:
                 if run_status.status == 'completed':
                     break
                 elif run_status.status in ['failed', 'cancelled', 'expired']:
-                    logger.error(f"Run status details: {run_status}")
+                    logger.error(f"Detalles del estado de ejecución: {run_status}")
                     if hasattr(run_status, 'last_error') and run_status.last_error and run_status.last_error.code == 'rate_limit_exceeded':
-                        raise Exception("OpenAI quota exceeded: " + run_status.last_error.message)
-                    raise Exception(f"Run failed with status: {run_status.status}")
+                        raise Exception("Cuota de OpenAI excedida: " + run_status.last_error.message)
+                    raise Exception(f"La ejecución falló con el estado: {run_status.status}")
                 elif time.time() - start_time > 60:
-                    raise TimeoutError("The assistant query took too long.")
+                    raise TimeoutError("La consulta al asistente tomó demasiado tiempo.")
                 await asyncio.sleep(1)
             messages = await self.client.beta.threads.messages.list(
                 thread_id=thread_id,
@@ -216,9 +216,8 @@ class CoachBot:
             )
             if not messages.data or not messages.data[0].content:
                 self.pending_requests.remove(chat_id)
-                return "⚠️ The assistant's response is empty. Please try again later."
+                return "⚠️ La respuesta del asistente está vacía. Intenta de nuevo más tarde."
             assistant_message = messages.data[0].content[0].text.value
-            # Remove any source reference markers from the assistant's message
             assistant_message = remove_source_references(assistant_message)
             self.conversation_history.setdefault(chat_id, []).append({
                 "role": "assistant",
@@ -226,11 +225,11 @@ class CoachBot:
             })
             return assistant_message
         except Exception as e:
-            logger.error(f"❌ Error processing message: {e}")
+            logger.error(f"❌ Error procesando el mensaje: {e}")
             error_message = str(e)
             if "Can't add messages to" in error_message:
-                return "⏳ Please wait, I'm still processing your previous request."
-            return "⚠️ There was an error processing your message: " + error_message
+                return "⏳ Por favor espera, aún estoy procesando tu solicitud anterior."
+            return "⚠️ Hubo un error procesando tu mensaje: " + error_message
         finally:
             if chat_id in self.pending_requests:
                 self.pending_requests.remove(chat_id)
@@ -241,22 +240,21 @@ class CoachBot:
         async with lock:
             try:
                 if not user_message.strip():
-                    return "⚠️ No valid message received."
+                    return "⚠️ No se recibió un mensaje válido."
                 voice_command_response = await self.process_voice_command(chat_id, user_message)
                 if voice_command_response:
                     return voice_command_response
                 await context.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
-                # Directly send the user message to the assistant without product search logic
                 response = await self.send_message_to_assistant(chat_id, user_message)
                 if not response.strip():
-                    logger.error("⚠️ OpenAI returned an empty response.")
-                    return "⚠️ I did not receive a valid response from the assistant. Please try again."
+                    logger.error("⚠️ OpenAI devolvió una respuesta vacía.")
+                    return "⚠️ No recibí una respuesta válida del asistente. Por favor intenta nuevamente."
                 self.save_conversation(chat_id, "user", user_message)
                 self.save_conversation(chat_id, "assistant", response)
                 return response
             except Exception as e:
-                logger.error(f"❌ Error in process_text_message: {e}", exc_info=True)
-                return "⚠️ There was an error processing your message."
+                logger.error(f"❌ Error en process_text_message: {e}", exc_info=True)
+                return "⚠️ Hubo un error procesando tu mensaje."
 
     def setup_handlers(self):
         try:
@@ -265,9 +263,9 @@ class CoachBot:
             self.telegram_app.add_handler(CommandHandler("voice", self.voice_settings_command))
             self.telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.route_message))
             self.telegram_app.add_handler(MessageHandler(filters.VOICE, self.handle_voice_message))
-            logger.info("Handlers configured successfully")
+            logger.info("Handlers configurados correctamente")
         except Exception as e:
-            logger.error(f"Error in setup_handlers: {e}")
+            logger.error(f"Error en setup_handlers: {e}")
             raise
 
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -278,25 +276,25 @@ class CoachBot:
             await voice_file.download_to_drive(oga_file_path)
             wav_file_path = f"{chat_id}_voice_note.wav"
             if not convertOgaToWav(oga_file_path, wav_file_path):
-                await update.message.reply_text("⚠️ Could not process the audio file.")
+                await update.message.reply_text("⚠️ No se pudo procesar el archivo de audio.")
                 return
             recognizer = sr.Recognizer()
             with sr.AudioFile(wav_file_path) as source:
                 audio = recognizer.record(source)
             try:
                 user_message = recognizer.recognize_google(audio, language='en-US')
-                logger.info("Voice transcription: " + user_message)
-                await update.message.reply_text(f"📝 Your message: \"{user_message}\"")
+                logger.info("Transcripción de voz: " + user_message)
+                await update.message.reply_text(f"📝 Tu mensaje: \"{user_message}\"")
                 response = await self.process_text_message(update, context, user_message)
                 await update.message.reply_text(response)
             except sr.UnknownValueError:
-                await update.message.reply_text("⚠️ I could not understand the voice note. Please try again.")
+                await update.message.reply_text("⚠️ No pude entender la nota de voz. Por favor intenta de nuevo.")
             except sr.RequestError as e:
-                logger.error("Error from Google voice recognition service: " + str(e))
-                await update.message.reply_text("⚠️ There was an error with the voice recognition service.")
+                logger.error("Error del servicio de reconocimiento de voz de Google: " + str(e))
+                await update.message.reply_text("⚠️ Hubo un error con el servicio de reconocimiento de voz.")
         except Exception as e:
-            logger.error("Error handling voice message: " + str(e))
-            await update.message.reply_text("⚠️ There was an error processing your voice note.")
+            logger.error("Error manejando la nota de voz: " + str(e))
+            await update.message.reply_text("⚠️ Hubo un error procesando tu nota de voz.")
         finally:
             try:
                 if os.path.exists(oga_file_path):
@@ -304,21 +302,21 @@ class CoachBot:
                 if os.path.exists(wav_file_path):
                     os.remove(wav_file_path)
             except Exception as e:
-                logger.error("Error deleting temporary files: " + str(e))
+                logger.error("Error eliminando archivos temporales: " + str(e))
 
     async def voice_settings_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.message.chat.id
         pref = self.user_preferences.get(chat_id, {'voice_responses': False, 'voice_speed': 1.0})
-        voice_status = "activated" if pref['voice_responses'] else "deactivated"
+        voice_status = "activadas" if pref['voice_responses'] else "desactivadas"
         help_text = (
-            "🎙 *Voice Settings*\n\n"
-            f"Current status: Voice responses {voice_status}\n"
-            f"Current speed: {pref['voice_speed']}x\n\n"
-            "*Available Commands:*\n"
-            "- 'Activate voice' - To receive voice responses\n"
-            "- 'Deactivate voice' - To receive text responses\n"
-            "- 'Speed X.X' - To adjust the speed (between 0.5 and 2.0)\n\n"
-            "You can also use these commands in any message."
+            "🎙 *Configuración de voz*\n\n"
+            f"Estado actual: Respuestas de voz {voice_status}\n"
+            f"Velocidad actual: {pref['voice_speed']}x\n\n"
+            "*Comandos disponibles:*\n"
+            "- 'Activar voz' - Para recibir respuestas de voz\n"
+            "- 'Desactivar voz' - Para recibir respuestas de texto\n"
+            "- 'Velocidad X.X' - Para ajustar la velocidad (entre 0.5 y 2.0)\n\n"
+            "También puedes usar estos comandos en cualquier mensaje."
         )
         await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -338,48 +336,48 @@ class CoachBot:
                 self.started = True
                 # Polling loop is disabled as we use webhooks.
                 # await self.telegram_app.start()
-            logger.info("Bot initialized successfully")
+            logger.info("Bot inicializado correctamente")
         except Exception as e:
-            logger.error(f"Error in async_init: {e}")
+            logger.error(f"Error en async_init: {e}")
             raise
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             chat_id = update.message.chat.id
-            await update.message.reply_text("👋 Welcome! How can I help you today?")
-            logger.info(f"/start command executed by chat_id: {chat_id}")
+            await update.message.reply_text("👋 ¡Bienvenido! ¿Cómo puedo ayudarte hoy?")
+            logger.info(f"Comando /start ejecutado por chat_id: {chat_id}")
         except Exception as e:
-            logger.error(f"Error in start_command: {e}")
-            await update.message.reply_text("❌ An error occurred. Please try again.")
+            logger.error(f"Error en start_command: {e}")
+            await update.message.reply_text("❌ Ocurrió un error. Por favor intenta de nuevo.")
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             help_text = (
-                "🤖 *Available Commands:*\n\n"
-                "/start - Start or restart the bot\n"
-                "/help - Show this help message\n"
-                "/voice - Configure voice responses\n\n"
-                "📝 *Features:*\n"
-                "- Exercise queries\n"
-                "- Personalized recommendations\n"
-                "- Progress tracking\n"
-                "- Resources and videos\n"
-                "- Voice notes (send or receive voice messages)\n\n"
-                "✨ Simply type your question or send a voice note."
+                "🤖 *Comandos disponibles:*\n\n"
+                "/start - Iniciar o reiniciar el bot\n"
+                "/help - Mostrar este mensaje de ayuda\n"
+                "/voice - Configurar respuestas de voz\n\n"
+                "📝 *Características:*\n"
+                "- Consultas sobre ejercicios\n"
+                "- Recomendaciones personalizadas\n"
+                "- Seguimiento de progreso\n"
+                "- Recursos y videos\n"
+                "- Notas de voz (enviar o recibir mensajes de voz)\n\n"
+                "✨ Simplemente escribe tu pregunta o envía una nota de voz."
             )
             await update.message.reply_text(help_text, parse_mode='Markdown')
-            logger.info(f"/help command executed by chat_id: {update.message.chat.id}")
+            logger.info(f"Comando /help ejecutado por chat_id: {update.message.chat.id}")
         except Exception as e:
-            logger.error(f"Error in help_command: {e}")
-            await update.message.reply_text("❌ Error displaying help. Please try again.")
+            logger.error(f"Error en help_command: {e}")
+            await update.message.reply_text("❌ Error al mostrar la ayuda. Por favor intenta de nuevo.")
 
     async def route_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await self.handle_message(update, context)
         except Exception as e:
-            logger.error(f"Error in route_message: {e}")
+            logger.error(f"Error en route_message: {e}")
             await update.message.reply_text(
-                "❌ An error occurred processing your message. Please try again."
+                "❌ Ocurrió un error procesando tu mensaje. Por favor intenta de nuevo."
             )
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -393,28 +391,28 @@ class CoachBot:
                 timeout=60.0
             )
             if response is None or not response.strip():
-                raise ValueError("The assistant's response is empty")
+                raise ValueError("La respuesta del asistente está vacía")
             self.save_conversation(chat_id, "user", user_message)
             self.save_conversation(chat_id, "assistant", response)
             await update.message.reply_text(response)
         except asyncio.TimeoutError:
-            logger.error(f"⏳ Timeout processing message for {chat_id}")
-            await update.message.reply_text("⏳ The operation is taking too long. Please try again later.")
+            logger.error(f"⏳ Timeout procesando el mensaje para {chat_id}")
+            await update.message.reply_text("⏳ La operación está tardando demasiado. Por favor intenta de nuevo más tarde.")
         except openai.OpenAIError as e:
-            logger.error(f"❌ Error with OpenAI: {e}")
-            await update.message.reply_text("❌ There was a problem with OpenAI.")
+            logger.error(f"❌ Error con OpenAI: {e}")
+            await update.message.reply_text("❌ Hubo un problema con OpenAI.")
         except Exception as e:
-            logger.error(f"⚠️ Unexpected error: {e}")
-            await update.message.reply_text("⚠️ An unexpected error occurred. Please try again later.")
+            logger.error(f"⚠️ Error inesperado: {e}")
+            await update.message.reply_text("⚠️ Ocurrió un error inesperado. Por favor intenta de nuevo más tarde.")
 
     async def text_to_speech(self, text, speed=1.0):
-        """Converts text to speech with speed adjustment."""
+        """Convierte el texto a voz con ajuste de velocidad."""
         try:
             temp_dir = os.path.join(os.getcwd(), 'temp')
             os.makedirs(temp_dir, exist_ok=True)
             temp_filename = f"voice_{int(time.time())}.mp3"
             temp_path = os.path.join(temp_dir, temp_filename)
-            tts = gTTS(text=text, lang='en')
+            tts = gTTS(text=text, lang='es')  # Cambio de idioma a español
             tts.save(temp_path)
             if speed != 1.3:
                 song = AudioSegment.from_mp3(temp_path)
@@ -422,22 +420,22 @@ class CoachBot:
                 new_song.export(temp_path, format="mp3")
             return temp_path
         except Exception as e:
-            print(f"Error in text_to_speech: {e}")
+            print(f"Error en text_to_speech: {e}")
             return None
 
 try:
     bot = CoachBot()
 except Exception as e:
-    logger.error("Critical error initializing the bot: " + str(e))
+    logger.error("Error crítico al inicializar el bot: " + str(e))
     raise
 
 @app.on_event("startup")
 async def startup_event():
     try:
         await bot.async_init()
-        logger.info("Application started successfully")
+        logger.info("Aplicación iniciada correctamente")
     except Exception as e:
-        logger.error("❌ Error starting the application: " + str(e))
+        logger.error("❌ Error al iniciar la aplicación: " + str(e))
 
 @app.post("/webhook")
 async def webhook(request: Request):
@@ -447,5 +445,5 @@ async def webhook(request: Request):
         await bot.telegram_app.process_update(update)
         return {"status": "ok"}
     except Exception as e:
-        logger.error("❌ Error processing webhook: " + str(e))
+        logger.error("❌ Error procesando el webhook: " + str(e))
         return {"status": "error", "message": str(e)}
