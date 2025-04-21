@@ -1,6 +1,7 @@
 # COACHBOT CON FUNCIONES COMPLETAS Y MEJORAS EN RESPUESTA A NOTAS DE VOZ
 # INCLUYE: manejo de cola, respuesta en voz si se recibe voz, sin mostrar texto "Has dicho" ni "procesando"
 # MEJORAS: persistencia de threads, personalización avanzada de voz, manejo mejorado de errores
+# ACTUALIZADO: _init_db() crea también users, messages y context para persistir todo el historial.
 
 import os
 import asyncio
@@ -76,37 +77,93 @@ class CoachBot:
         self._load_user_threads()
         self.setup_handlers()
 
+    # ------------------------------------------------------------------ #
+    #  ACTUALIZADO: método único que crea TODAS las tablas si no existen  #
+    # ------------------------------------------------------------------ #
     def _init_db(self):
-        """Inicializar la base de datos con las tablas necesarias"""
+        """
+        Inicializa la base de datos SQLite.  
+        Crea las tablas necesarias *solo* si todavía no existen para
+        conservar todos los datos (usuarios, hilos, mensajes, contexto,
+        preferencias…) incluso tras reinicios del proceso o despliegues.
+        """
         with closing(sqlite3.connect(self.db_path)) as conn:
             cursor = conn.cursor()
+
+            # Tabla de conversaciones resumidas (ya existente)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS conversations (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    chat_id INTEGER, 
-                    role TEXT, 
-                    content TEXT,
+                    id        INTEGER  PRIMARY KEY AUTOINCREMENT,
+                    chat_id   INTEGER,
+                    role      TEXT,
+                    content   TEXT,
                     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # Preferencias del usuario (ya existente)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_preferences (
-                    chat_id INTEGER PRIMARY KEY, 
-                    voice_responses BOOLEAN DEFAULT 0, 
-                    voice_speed FLOAT DEFAULT 1.0,
-                    voice_language TEXT DEFAULT 'es',
-                    voice_gender TEXT DEFAULT 'female'
+                    chat_id        INTEGER PRIMARY KEY,
+                    voice_responses BOOLEAN DEFAULT 0,
+                    voice_speed     FLOAT   DEFAULT 1.0,
+                    voice_language  TEXT    DEFAULT 'es',
+                    voice_gender    TEXT    DEFAULT 'female'
                 )
             ''')
+
+            # Persistencia de hilos de OpenAI (ya existente)
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_threads (
-                    chat_id INTEGER PRIMARY KEY,
-                    thread_id TEXT,
+                    chat_id    INTEGER PRIMARY KEY,
+                    thread_id  TEXT,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             ''')
+
+            # ---------- NUEVAS TABLAS para historial completo ---------- #
+            # Usuarios únicos
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id     INTEGER PRIMARY KEY,
+                    username    TEXT,
+                    first_name  TEXT,
+                    last_name   TEXT,
+                    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Mensajes detallados (útil para analíticas)
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS messages (
+                    message_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id     INTEGER,
+                    user_id     INTEGER,
+                    content     TEXT,
+                    timestamp   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_bot      BOOLEAN,
+                    FOREIGN KEY (chat_id) REFERENCES user_threads(chat_id),
+                    FOREIGN KEY (user_id) REFERENCES users(user_id)
+                )
+            ''')
+
+            # Contexto JSON por chat o thread
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS context (
+                    context_id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id      INTEGER,
+                    thread_id    TEXT,
+                    context_data TEXT,
+                    updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (chat_id) REFERENCES user_threads(chat_id)
+                )
+            ''')
+
             conn.commit()
 
+    # ------------------------------------------------------------------ #
+    #            CARGA DE PREFS Y THREADS DESDE LA BASE DE DATOS         #
+    # ------------------------------------------------------------------ #
     def _load_user_preferences(self):
         """Cargar preferencias de usuarios desde la base de datos"""
         with closing(sqlite3.connect(self.db_path)) as conn:
@@ -131,6 +188,9 @@ class CoachBot:
             for chat_id, thread_id in rows:
                 self.user_threads[chat_id] = thread_id
 
+    # ------------------------------------------------------------------ #
+    #                        CONFIGURACIÓN DE HANDLERS                   #
+    # ------------------------------------------------------------------ #
     def setup_handlers(self):
         """Configurar handlers para los diferentes tipos de mensajes y comandos"""
         self.telegram_app.add_handler(CommandHandler("start", self.start_command))
@@ -150,6 +210,9 @@ class CoachBot:
         asyncio.create_task(self.handle_queue())
         logger.info("Bot inicializado correctamente")
 
+    # ------------------------------------------------------------------ #
+    #                  COLA PARA EVITAR SOBRECARGA DE OPENAI             #
+    # ------------------------------------------------------------------ #
     async def handle_queue(self):
         """Procesar mensajes en cola para evitar sobrecarga"""
         while True:
@@ -173,6 +236,9 @@ class CoachBot:
 
         await self.task_queue.put((chat_id, update, context, message))
 
+    # ------------------------------------------------------------------ #
+    #                MANEJO DE MENSAJES DE VOZ (ASR + TTS)               #
+    # ------------------------------------------------------------------ #
     async def handle_voice_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Manejar mensajes de voz: reconocer, procesar y activar respuestas de voz"""
         chat_id = update.message.chat.id
@@ -236,6 +302,9 @@ class CoachBot:
         except Exception as e:
             logger.error(f"Error eliminando archivos temporales: {e}")
 
+    # ------------------------------------------------------------------ #
+    #                COMUNICACIÓN CON OPENAI  (Threads API)              #
+    # ------------------------------------------------------------------ #
     async def get_openai_response(self, chat_id, message):
         """Obtener respuesta de OpenAI manteniendo contexto usando threads"""
         try:
@@ -334,6 +403,9 @@ class CoachBot:
 
         return thread_id
 
+    # ------------------------------------------------------------------ #
+    #                  RESPUESTA (TEXTO o VOZ) AL USUARIO                #
+    # ------------------------------------------------------------------ #
     async def send_response(self, update, chat_id, text):
         """Enviar respuesta: como texto o como nota de voz según las preferencias"""
         pref = self.user_preferences.get(chat_id, {
@@ -402,8 +474,11 @@ class CoachBot:
             logger.error(f"TTS error: {e}")
             return None
 
+    # ------------------------------------------------------------------ #
+    #                       PERSISTENCIA  (INSERTs)                      #
+    # ------------------------------------------------------------------ #
     def save_conversation(self, chat_id, role, content):
-        """Guardar conversación en la base de datos con timestamp"""
+        """Guardar conversación resumida (rol + contenido) con timestamp"""
         try:
             with closing(sqlite3.connect(self.db_path)) as conn:
                 cursor = conn.cursor()
@@ -436,6 +511,9 @@ class CoachBot:
         except Exception as e:
             logger.error(f"Error guardando preferencias: {e}")
 
+    # ------------------------------------------------------------------ #
+    #                        COMANDOS DEL BOT                            #
+    # ------------------------------------------------------------------ #
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Manejar comando /start"""
         chat_id = update.message.chat.id
@@ -529,6 +607,9 @@ class CoachBot:
         thread_id = await self.get_or_create_thread(chat_id)
         logger.info(f"Nuevo thread creado para chat_id {chat_id}: {thread_id}")
 
+    # ------------------------------------------------------------------ #
+    #                      INLINE BUTTONS / CALLBACKS                    #
+    # ------------------------------------------------------------------ #
     async def handle_button_press(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Manejar botones de configuración"""
         query = update.callback_query
@@ -618,6 +699,9 @@ class CoachBot:
             text=update_msg
         )
 
+    # ------------------------------------------------------------------ #
+    #                       LIMPIEZA DE ARCHIVOS TEMP                    #
+    # ------------------------------------------------------------------ #
     async def cleanup_temp_files(self, context):
         """Limpiar archivos temporales periódicamente"""
         try:
