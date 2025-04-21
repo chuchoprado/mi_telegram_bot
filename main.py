@@ -62,7 +62,8 @@ class CoachBot:
         self.telegram_app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         self.task_queue = asyncio.Queue()
 
-        self.db_path = 'bot_data.db'
+        self.db_path = os.getenv("DB_PATH", "bot_data.db")
+        logger.info(f"📂 Base de datos en → {os.path.abspath(self.db_path)}")
         self.user_preferences = {}
         self.user_threads = {}
         self.user_sent_voice = set()
