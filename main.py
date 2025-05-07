@@ -34,20 +34,34 @@ app = FastAPI()
 
 # ──────────────────── NUEVO: LIMPIAR EMOJIS ──────────────────────
 def clean_text(text: str) -> str:
-    """Elimina emojis, emoticonos ASCII y referencias de fuente."""
-    emoji_pattern = re.compile(
-        "["
+    """
+    Elimina:
+    • Emojis Unicode
+    • Emoticonos ASCII
+    • Referencias de fuente  【..】
+    • Símbolos de formato Markdown (* _ ~ ` # > - •)
+    """
+    # Emojis
+    emoji_re = re.compile(
+        "["                 # rangos unicode
         "\U0001F600-\U0001F64F"
         "\U0001F300-\U0001F5FF"
         "\U0001F680-\U0001F6FF"
         "\U0001F1E0-\U0001F1FF"
-        "]+",
-        flags=re.UNICODE
-    )
-    text = emoji_pattern.sub('', text)
-    emoticon_pattern = re.compile(r'(:\)|:\(|;\)|:-\)|:-\(|;D|:D|<3)')
-    text = emoticon_pattern.sub('', text)
+        "]+", flags=re.UNICODE)
+    text = emoji_re.sub("", text)
+
+    # Emoticonos ASCII comunes
+    emot_re = re.compile(r'(:\)|:\(|;\)|:-\)|:-\(|;D|:D|<3)')
+    text = emot_re.sub("", text)
+
+    # Referencias de fuente OpenAI
     text = re.sub(r'\【[\d:]+†source\】', '', text)
+
+    # Símbolos de formato / listas / viñetas
+    text = re.sub(r'[*_~`>#•\-]+', ' ', text)
+
+    # Colapsar espacios
     return re.sub(r'\s{2,}', ' ', text).strip()
 
 def remove_source_references(text: str) -> str:
