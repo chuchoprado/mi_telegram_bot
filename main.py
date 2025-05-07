@@ -48,14 +48,14 @@ app = FastAPI()
 # NUEVO: función para limpiar emojis y emoticonos
 # --------------------------------------------------
 def clean_text(text: str) -> str:
-    \"\"\"Elimina emojis, emoticonos y referencias de fuente.\"\"\"
+    "\"\"Elimina emojis, emoticonos y referencias de fuente."\"\"
     emoji_pattern = re.compile(
-        \"[\" 
-        \"\\U0001F600-\\U0001F64F\"  # emoticones
-        \"\\U0001F300-\\U0001F5FF\"  # símbolos
-        \"\\U0001F680-\\U0001F6FF\"  # transporte
-        \"\\U0001F1E0-\\U0001F1FF\"  # banderas
-        \"]+\", flags=re.UNICODE)
+        "[\" 
+        "\\U0001F600-\\U0001F64F\"  # emoticones
+        "\\U0001F300-\\U0001F5FF\"  # símbolos
+        "\\U0001F680-\\U0001F6FF\"  # transporte
+        "\\U0001F1E0-\\U0001F1FF\"  # banderas
+        "]+\", flags=re.UNICODE)
     text = emoji_pattern.sub('', text)
     emoticon_pattern = re.compile(r'(:\\)|:\\(|;\\)|:-\\)|:-\\(|;D|:D|<3)')
     text = emoticon_pattern.sub('', text)
