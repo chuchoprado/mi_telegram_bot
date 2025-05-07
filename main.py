@@ -1,8 +1,3 @@
-# COACHBOT CON FUNCIONES COMPLETAS Y MEJORAS EN RESPUESTA A NOTAS DE VOZ
-# INCLUYE: manejo de cola, respuesta en voz si se recibe voz, sin mostrar texto "Has dicho" ni "procesando"
-# MEJORAS: persistencia de threads, personalización avanzada de voz, manejo mejorado de errores
-# ACTUALIZADO: _init_db() crea también users, messages y context para persistir todo el historial.
-
 import os
 import asyncio
 import httpx
@@ -33,45 +28,55 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
+# --------------------------------------------------
+# NUEVO: función para limpiar emojis y emoticonos
+# --------------------------------------------------
+def clean_text(text: str) -> str:
+    \"\"\"Elimina emojis, emoticonos y referencias de fuente.\"\"\"
+    emoji_pattern = re.compile(
+        \"[\" 
+        \"\\U0001F600-\\U0001F64F\"  # emoticones
+        \"\\U0001F300-\\U0001F5FF\"  # símbolos
+        \"\\U0001F680-\\U0001F6FF\"  # transporte
+        \"\\U0001F1E0-\\U0001F1FF\"  # banderas
+        \"]+\", flags=re.UNICODE)
+    text = emoji_pattern.sub('', text)
+    emoticon_pattern = re.compile(r'(:\\)|:\\(|;\\)|:-\\)|:-\\(|;D|:D|<3)')
+    text = emoticon_pattern.sub('', text)
+    text = re.sub(r'\\【[\\d:]+†source\\】', '', text)
+    return re.sub(r'\\s{2,}', ' ', text).strip()
 
 def remove_source_references(text: str) -> str:
-    """Elimina las referencias de fuentes del texto generado por OpenAI"""
-    return re.sub(r'\【[\d:]+†source\】', '', text)
-
+    return re.sub(r'\\【[\\d:]+†source\\】', '', text)
 
 def convertOgaToWav(oga_path, wav_path):
-    """Convierte archivos de audio de formato OGA a WAV usando ffmpeg"""
     try:
-        subprocess.run(["ffmpeg", "-i", oga_path, wav_path], check=True)
+        subprocess.run([\"ffmpeg\", \"-i\", oga_path, wav_path], check=True, timeout=60)
         return True
     except Exception as e:
-        logger.error("Error al convertir el archivo de audio: " + str(e))
+        logger.error(\"Error al convertir el archivo de audio: \" + str(e))
         return False
-
 
 class CoachBot:
     def __init__(self):
-        self.TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-        self.OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-        self.ASSISTANT_ID = os.getenv("ASSISTANT_ID")
+        self.TELEGRAM_TOKEN = os.getenv(\"TELEGRAM_TOKEN\")
+        self.OPENAI_API_KEY = os.getenv(\"OPENAI_API_KEY\")
+        self.ASSISTANT_ID = os.getenv(\"ASSISTANT_ID\")
 
         if not self.TELEGRAM_TOKEN or not self.OPENAI_API_KEY or not self.ASSISTANT_ID:
-            raise EnvironmentError("Faltan variables de entorno necesarias")
+            raise EnvironmentError(\"Faltan variables de entorno necesarias\")
 
         self.client = AsyncOpenAI(api_key=self.OPENAI_API_KEY)
         self.telegram_app = Application.builder().token(self.TELEGRAM_TOKEN).build()
         self.task_queue = asyncio.Queue()
 
-        self.db_path = os.getenv("DB_PATH", "bot_data.db")
-        logger.info(f"📂 Base de datos en → {os.path.abspath(self.db_path)}")
+        self.db_path = os.getenv(\"DB_PATH\", \"bot_data.db\")
+        logger.info(f\"📂 Base de datos en → {os.path.abspath(self.db_path)}\")
         self.user_preferences = {}
         self.user_threads = {}
         self.user_sent_voice = set()
         self.temp_dir = 'temp_files'
-
-        # Crear directorio temporal si no existe
-        if not os.path.exists(self.temp_dir):
-            os.makedirs(self.temp_dir)
+        os.makedirs(self.temp_dir, exist_ok=True)
 
         self._init_db()
         self._load_user_preferences()
